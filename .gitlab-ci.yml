@@ -1,0 +1,15 @@
+# Use Rust docker image, see: https://hub.docker.com/_/rust/
+image: rust:latest
+
+# Defines stages which are to be executed
+stages:
+  - build
+
+# Run `cargo test` for the project with stable Rust
+run-build:
+  stage: build
+  image: rust:latest
+  script:
+  - rustc --version && cargo --version
+  - cargo test
+
