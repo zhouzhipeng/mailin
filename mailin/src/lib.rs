@@ -10,13 +10,13 @@ extern crate nom;
 #[macro_use]
 extern crate ternop;
 
-use std::fmt;
 use std::io;
 use std::io::{sink, Write};
 use std::net::IpAddr;
 mod fsm;
 mod parser;
 mod smtp;
+mod states;
 
 pub use smtp::{Session, SessionBuilder};
 
@@ -56,7 +56,7 @@ pub trait Handler {
     }
 
     /// Called when a mail message is started
-    fn mail(&mut self, _helo: &Helo, _from: &str) -> MailResult {
+    fn mail(&mut self, _helo: &states::Helo, _from: &str) -> MailResult {
         MailResult::Ok
     }
 
@@ -66,7 +66,7 @@ pub trait Handler {
     }
 
     /// Called when a data command is received, should return a writer to write the data to
-    fn data(&mut self, _rcpt: &Rcpt) -> DataResult {
+    fn data(&mut self, _rcpt: &states::Rcpt) -> DataResult {
         DataResult::Ok(Box::new(sink()))
     }
 
@@ -78,68 +78,6 @@ pub trait Handler {
         _password: &str,
     ) -> AuthResult {
         AuthResult::InvalidCredentials
-    }
-}
-
-//------ State -----------------------------------------------------------------
-
-// Data held in states that is passed to callbacks
-
-#[derive(Debug)]
-pub(crate) struct Idle {
-    ip: IpAddr,
-}
-
-#[derive(Debug)]
-pub(crate) struct IdleAuth(Idle);
-
-#[derive(Debug)]
-pub struct Helo {
-    pub ip: IpAddr,
-    pub domain: String,
-}
-
-#[derive(Debug)]
-pub(crate) struct HeloAuth(Helo);
-
-#[derive(Debug)]
-pub enum AuthMechanism {
-    Plain,
-}
-
-#[derive(Debug)]
-pub(crate) struct Auth {
-    ip: IpAddr,
-    domain: String,
-    mechanism: AuthMechanism,
-}
-
-#[derive(Debug)]
-pub struct Mail {
-    pub ip: IpAddr,
-    pub domain: String,
-    pub reverse_path: String,
-    pub is8bit: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct Rcpt {
-    pub ip: IpAddr,
-    pub domain: String,
-    pub reverse_path: String,
-    pub is8bit: bool,
-    pub forward_path: Vec<String>,
-}
-
-struct Data {
-    ip: IpAddr,
-    domain: String,
-    writer: Box<Write>,
-}
-
-impl fmt::Debug for Data {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Data{{ip: {:?}, domain: {:?}}}", self.ip, self.domain,)
     }
 }
 

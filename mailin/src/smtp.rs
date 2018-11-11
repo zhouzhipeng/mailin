@@ -1,8 +1,9 @@
 use std::net::IpAddr;
 use std::str;
 
-use fsm::{StateMachine, States};
+use fsm::StateMachine;
 use parser::parse;
+use states::States;
 use {Action, Handler, Response};
 
 //------ Responses -------------------------------------------------------------

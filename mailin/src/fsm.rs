@@ -4,158 +4,28 @@ use smtp::{
     MailCmd, RcptCmd, RsetCmd, StartTlsCmd, VrfyCmd, AUTHENTICATION_REQUIRED,
     BAD_SEQUENCE_COMMANDS, EMPTY_RESPONSE, GOODBYE, START_DATA, START_TLS, VERIFY_RESPONSE,
 };
-use {
-    Action, Auth, AuthMechanism, Data, DataResult, Handler, Helo, HeloAuth, HeloResult, Idle,
-    IdleAuth, Mail, Rcpt, Response, OK, TRANSACTION_FAILED,
-};
+use {Action, DataResult, Handler, HeloResult, Response, OK, TRANSACTION_FAILED};
 
+use states::{Auth, AuthMechanism, Data, Helo, HeloAuth, Idle, Mail, Rcpt, State, States};
 use std::io::{sink, Write};
 use std::mem;
 use std::net::IpAddr;
 
-//------ State -----------------------------------------------------------------
-
-#[derive(Debug)]
-pub(crate) enum States {
-    Invalid,
-    Idle(Idle),
-    Helo(Helo),
-    IdleAuth(IdleAuth),
-    HeloAuth(HeloAuth),
-    Auth(Auth),
-    Mail(Mail),
-    Rcpt(Rcpt),
-    Data(Data),
-}
-
-//------ Map State structs back to states --------------------------------------
-
-impl From<Idle> for States {
-    fn from(v: Idle) -> States {
-        States::Idle(v)
-    }
-}
-
-impl From<Helo> for States {
-    fn from(v: Helo) -> States {
-        States::Helo(v)
-    }
-}
-
-impl From<IdleAuth> for States {
-    fn from(v: IdleAuth) -> States {
-        States::IdleAuth(v)
-    }
-}
-
-impl From<HeloAuth> for States {
-    fn from(v: HeloAuth) -> States {
-        States::HeloAuth(v)
-    }
-}
-
-impl From<Auth> for States {
-    fn from(v: Auth) -> States {
-        States::Auth(v)
-    }
-}
-
-impl From<Mail> for States {
-    fn from(v: Mail) -> States {
-        States::Mail(v)
-    }
-}
-
-impl From<Rcpt> for States {
-    fn from(v: Rcpt) -> States {
-        States::Rcpt(v)
-    }
-}
-
-impl From<Data> for States {
-    fn from(v: Data) -> States {
-        States::Data(v)
-    }
-}
-
 //------ Common functionality for states ---------------------------------------
 
-trait State: Into<States> {
-    fn get_ip(&self) -> IpAddr;
-
-    fn require_auth(&self) -> bool {
-        false
-    }
-
-    // Return the next state depending on the response
-    fn handle_response<F, S>(self, res: Response, next_state: F) -> (Response, States)
-    where
-        F: FnOnce(Self) -> S,
-        S: Into<States>,
-    {
-        if res.action == Action::Close {
-            (res, States::Invalid)
-        } else if res.is_error {
-            (res, self.into())
-        } else {
-            (res, next_state(self).into())
-        }
-    }
-}
-
-// TODO: can this be removed?
-
-impl State for Idle {
-    fn get_ip(&self) -> IpAddr {
-        self.ip
-    }
-}
-
-impl State for Helo {
-    fn get_ip(&self) -> IpAddr {
-        self.ip
-    }
-}
-
-impl State for IdleAuth {
-    fn get_ip(&self) -> IpAddr {
-        self.0.ip
-    }
-    fn require_auth(&self) -> bool {
-        true
-    }
-}
-
-impl State for HeloAuth {
-    fn get_ip(&self) -> IpAddr {
-        self.0.ip
-    }
-    fn require_auth(&self) -> bool {
-        true
-    }
-}
-
-impl State for Auth {
-    fn get_ip(&self) -> IpAddr {
-        self.ip
-    }
-}
-
-impl State for Mail {
-    fn get_ip(&self) -> IpAddr {
-        self.ip
-    }
-}
-
-impl State for Rcpt {
-    fn get_ip(&self) -> IpAddr {
-        self.ip
-    }
-}
-
-impl State for Data {
-    fn get_ip(&self) -> IpAddr {
-        self.ip
+// Return the next state depending on the response
+fn handle_response<F, S1, S2>(state: S1, res: Response, next_state: F) -> (Response, States)
+where
+    F: FnOnce(S1) -> S2,
+    S1: State,
+    S2: State,
+{
+    if res.action == Action::Close {
+        (res, States::Invalid)
+    } else if res.is_error {
+        (res, state.into())
+    } else {
+        (res, next_state(state).into())
     }
 }
 
@@ -188,7 +58,7 @@ impl<'a, S: State> StateChange<EhloCmd<'a>> for S {
             domain: cmd.domain.to_owned(),
         };
         if self.require_auth() {
-            self.handle_response(res, |_s: S| HeloAuth(helo))
+            self.handle_response(res, |_s: S| States::HeloAuth(helo))
         } else {
             self.handle_response(res, |_s: S| helo)
         }
@@ -205,7 +75,7 @@ impl StateChange<StartTlsCmd> for HeloAuth {
     fn execute(self, _handler: &mut Handler, _cmd: StartTlsCmd) -> (Response, States) {
         (
             START_TLS.clone(),
-            IdleAuth(Idle { ip: self.get_ip() }).into(),
+            States::IdleAuth(Idle { ip: self.get_ip() }).into(),
         )
     }
 }
@@ -262,7 +132,7 @@ impl<'a> StateChange<AuthResponseCmd<'a>> for Auth {
             domain: self.domain,
         };
         if res.is_error {
-            (res, HeloAuth(helo).into())
+            (res, States::HeloAuth(helo).into())
         } else {
             (res, helo.into())
         }
@@ -378,7 +248,7 @@ impl StateMachine {
         Self {
             current: ternary!(
                 require_auth,
-                States::IdleAuth(IdleAuth(idle)),
+                States::IdleAuth(States::IdleAuth(idle)),
                 States::Idle(idle)
             ),
             start_tls_extension: ternary!(
