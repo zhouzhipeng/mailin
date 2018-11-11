@@ -1,0 +1,12 @@
+[package]
+name = "mailin-server"
+version = "0.1.0"
+authors = ["alienscience <saul@alienscience.org.uk>"]
+
+[dependencies]
+mailin-embedded = { path="../mailin-embedded" }
+log = "0.4"
+simplelog = "0.5"
+chrono = "0.4"
+getopts = "0.2"
+failure = "0.1"

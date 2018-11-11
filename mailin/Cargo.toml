@@ -1,0 +1,11 @@
+[package]
+name = "mailin"
+version = "0.1.0"
+authors = ["alienscience <saul@alienscience.org.uk>"]
+
+[dependencies]
+nom = "4.0"
+lazy_static = "1.1"
+log = "0.4"
+base64 = "0.9"
+ternop = "1.0"

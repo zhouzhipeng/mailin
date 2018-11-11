@@ -1,0 +1,13 @@
+[package]
+name = "mailin-embedded"
+version = "0.1.0"
+authors = ["alienscience <saul@alienscience.org.uk>"]
+
+[dependencies]
+mailin = { path="../mailin" }
+threadpool = "1.0"
+log = "0.4"
+lazy_static = "1.1"
+openssl = "0.10"
+bufstream = "0.1"
+failure = "0.1"
