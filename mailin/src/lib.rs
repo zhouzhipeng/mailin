@@ -1,5 +1,8 @@
 //! A library for building smtp servers.
 
+// Use write! for /r/n
+#![cfg_attr(feature = "cargo-clippy", allow(write_with_newline))]
+
 extern crate base64;
 #[macro_use]
 extern crate lazy_static;
@@ -9,8 +12,8 @@ extern crate log;
 extern crate nom;
 #[macro_use]
 extern crate ternop;
+extern crate either;
 
-use std::fmt;
 use std::io;
 use std::io::{sink, Write};
 use std::net::IpAddr;
@@ -56,7 +59,7 @@ pub trait Handler {
     }
 
     /// Called when a mail message is started
-    fn mail(&mut self, _helo: &Helo, _from: &str) -> MailResult {
+    fn mail(&mut self, _ip: IpAddr, _domain: &str, _from: &str) -> MailResult {
         MailResult::Ok
     }
 
@@ -66,7 +69,7 @@ pub trait Handler {
     }
 
     /// Called when a data command is received, should return a writer to write the data to
-    fn data(&mut self, _rcpt: &Rcpt) -> DataResult {
+    fn data(&mut self, _domain: &str, _from: &str, _is8bit: bool, _to: &[String]) -> DataResult {
         DataResult::Ok(Box::new(sink()))
     }
 
@@ -81,66 +84,10 @@ pub trait Handler {
     }
 }
 
-//------ State -----------------------------------------------------------------
-
-// Data held in states that is passed to callbacks
-
-#[derive(Debug)]
-pub(crate) struct Idle {
-    ip: IpAddr,
-}
-
-#[derive(Debug)]
-pub(crate) struct IdleAuth(Idle);
-
-#[derive(Debug)]
-pub struct Helo {
-    pub ip: IpAddr,
-    pub domain: String,
-}
-
-#[derive(Debug)]
-pub(crate) struct HeloAuth(Helo);
-
+//TODO: Move
 #[derive(Debug)]
 pub enum AuthMechanism {
     Plain,
-}
-
-#[derive(Debug)]
-pub(crate) struct Auth {
-    ip: IpAddr,
-    domain: String,
-    mechanism: AuthMechanism,
-}
-
-#[derive(Debug)]
-pub struct Mail {
-    pub ip: IpAddr,
-    pub domain: String,
-    pub reverse_path: String,
-    pub is8bit: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct Rcpt {
-    pub ip: IpAddr,
-    pub domain: String,
-    pub reverse_path: String,
-    pub is8bit: bool,
-    pub forward_path: Vec<String>,
-}
-
-struct Data {
-    ip: IpAddr,
-    domain: String,
-    writer: Box<Write>,
-}
-
-impl fmt::Debug for Data {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Data{{ip: {:?}, domain: {:?}}}", self.ip, self.domain,)
-    }
 }
 
 //------ Response --------------------------------------------------------------
@@ -432,9 +379,9 @@ mod tests {
         }
 
         // Called when a mail message is started
-        fn mail(&mut self, helo: &Helo, from: &str) -> MailResult {
-            assert_eq!(self.ip, helo.ip);
-            assert_eq!(self.domain, helo.domain);
+        fn mail(&mut self, ip: IpAddr, domain: &str, from: &str) -> MailResult {
+            assert_eq!(self.ip, ip);
+            assert_eq!(self.domain, domain);
             assert_eq!(self.from, from);
             self.mail_called = true;
             MailResult::Ok
@@ -449,12 +396,11 @@ mod tests {
         }
 
         // Called to write an email message to a writer
-        fn data(&mut self, rcpt: &Rcpt) -> DataResult {
-            assert_eq!(self.ip, rcpt.ip);
-            assert_eq!(self.domain, rcpt.domain);
-            assert_eq!(self.from, rcpt.reverse_path);
-            assert_eq!(self.to, rcpt.forward_path);
-            assert_eq!(self.is8bit, rcpt.is8bit);
+        fn data(&mut self, domain: &str, from: &str, is8bit: bool, to: &[String]) -> DataResult {
+            assert_eq!(self.domain, domain);
+            assert_eq!(self.from, from);
+            assert_eq!(self.to, to);
+            assert_eq!(self.is8bit, is8bit);
             self.data_called = true;
             let test_writer = TestWriter {
                 expected_data: self.expected_data.clone(),
