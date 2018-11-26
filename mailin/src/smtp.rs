@@ -1,8 +1,8 @@
 use std::net::IpAddr;
 use std::str;
 
-use fsm::{StateMachine, States};
-use parser::parse;
+use either::{Left, Right};
+use fsm::StateMachine;
 use {Action, Handler, Response};
 
 //------ Responses -------------------------------------------------------------
@@ -29,58 +29,44 @@ lazy_static! {
 
 // Smtp commands sent by the client
 pub enum Cmd<'a> {
-    Ehlo(EhloCmd<'a>),
-    Helo(HeloCmd<'a>),
-    Mail(MailCmd<'a>),
-    Rcpt(RcptCmd<'a>),
-    Data(DataCmd),
-    Rset(RsetCmd),
-    Noop(NoopCmd),
-    StartTls(StartTlsCmd),
-    Quit(QuitCmd),
-    Vrfy(VrfyCmd),
-    AuthPlain(AuthPlainCmd),
-    AuthPlainEmpty(AuthPlainEmptyCmd),
-    AuthResponse(AuthResponseCmd<'a>), // Dummy command containing client authentication
-    DataEnd(DataEndCmd),               // Dummy command to signify end of data
+    Ehlo {
+        domain: &'a str,
+    },
+    Helo {
+        domain: &'a str,
+    },
+    Mail {
+        reverse_path: &'a str,
+        is8bit: bool,
+    },
+    Rcpt {
+        forward_path: &'a str,
+    },
+    Data,
+    Rset,
+    Noop,
+    StartTls,
+    Quit,
+    Vrfy,
+    AuthPlain {
+        authorization_id: String,
+        authentication_id: String,
+        password: String,
+    },
+    AuthPlainEmpty,
+    // Dummy command containing client authentication
+    AuthResponse {
+        response: &'a [u8],
+    },
+    // Dummy command to signify end of data
+    DataEnd,
 }
 
-pub struct EhloCmd<'a> {
-    pub domain: &'a str,
-}
-
-pub struct HeloCmd<'a> {
-    pub domain: &'a str,
-}
-
-pub struct MailCmd<'a> {
-    pub reverse_path: &'a str,
-    pub is8bit: bool,
-}
-
-pub struct RcptCmd<'a> {
-    pub forward_path: &'a str,
-}
-
-pub struct AuthPlainCmd {
+pub(crate) struct Credentials {
     pub authorization_id: String,
     pub authentication_id: String,
     pub password: String,
 }
-
-pub struct AuthResponseCmd<'a> {
-    pub response: &'a [u8],
-}
-
-// Empty types needed by state machine
-pub struct DataCmd {}
-pub struct RsetCmd {}
-pub struct NoopCmd {}
-pub struct StartTlsCmd {}
-pub struct QuitCmd {}
-pub struct VrfyCmd {}
-pub struct DataEndCmd {}
-pub struct AuthPlainEmptyCmd {}
 
 /// A single smtp session
 pub struct Session<H: Handler> {
@@ -141,7 +127,7 @@ impl SessionBuilder {
         Session {
             name: self.name.clone(),
             handler,
-            fsm: StateMachine::new(remote, self.start_tls_extension, self.auth_extension),
+            fsm: StateMachine::new(remote, self.auth_extension),
             start_tls_extension: self.start_tls_extension,
             auth_extension: self.auth_extension,
         }
@@ -157,7 +143,6 @@ impl<H: Handler> Session<H> {
     /// STARTTLS active
     pub fn tls_active(&mut self) {
         self.start_tls_extension = false;
-        self.fsm.enable_tls();
     }
 
     /// Process a line sent by the client.
@@ -187,26 +172,12 @@ impl<H: Handler> Session<H> {
     /// assert_eq!(&msg, b"250 OK\r\n");
     /// ```
     pub fn process(&mut self, line: &[u8]) -> Response {
-        let response = match *self.fsm.current_state() {
-            States::Data { .. } if line == b"." => {
-                trace!("> _data_");
-                self.command(Cmd::DataEnd(DataEndCmd {}))
+        let response = match self.fsm.process_line(line) {
+            Left(cmd) => {
+                let res = self.command(cmd);
+                self.fill_response(res)
             }
-            States::Data { .. } => self.fsm.data(line),
-            States::Auth { .. } => {
-                self.command(Cmd::AuthResponse(AuthResponseCmd { response: line }))
-            }
-            States::Invalid => INVALID_STATE.clone(),
-            _ => {
-                trace!("> {}", String::from_utf8_lossy(line));
-                match parse(line) {
-                    Ok(cmd) => {
-                        let res = self.command(cmd);
-                        self.fill_response(res)
-                    }
-                    Err(err) => err,
-                }
-            }
+            Right(res) => res,
         };
         response.log();
         response
@@ -236,6 +207,7 @@ impl<H: Handler> Session<H> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fsm::States;
     use std::net::Ipv4Addr;
     use {Action, AuthResult, Message};
 
@@ -267,10 +239,10 @@ mod tests {
         let mut session = new_session();
         let res1 = session.process(b"helo a.domain");
         assert_eq!(res1.code, 250);
-        assert_state!(session.fsm.current_state(), &States::Helo(_));
+        assert_state!(session.fsm.current_state(), States::Hello);
         let res2 = session.process(b"ehlo b.domain");
         assert_eq!(res2.code, 250);
-        assert_state!(session.fsm.current_state(), &States::Helo(_));
+        assert_state!(session.fsm.current_state(), States::Hello);
     }
 
     #[test]
@@ -279,7 +251,7 @@ mod tests {
         session.process(b"helo a.domain");
         let res = session.process(b"mail from:<ship@sea.com>");
         assert_eq!(res.code, 250);
-        assert_state!(session.fsm.current_state(), &States::Mail(_));
+        assert_state!(session.fsm.current_state(), States::Mail);
     }
 
     #[test]
@@ -287,7 +259,7 @@ mod tests {
         let mut session = new_session();
         let res = session.process(b"helo world\x40\xff");
         assert_eq!(res.code, 500);
-        assert_state!(session.fsm.current_state(), &States::Idle(_));
+        assert_state!(session.fsm.current_state(), States::Idle);
     }
 
     #[test]
@@ -299,7 +271,7 @@ mod tests {
         assert_eq!(res1.code, 250);
         let res2 = session.process(b"rcpt to:<kraken@sea.com>");
         assert_eq!(res2.code, 250);
-        assert_state!(session.fsm.current_state(), &States::Rcpt(_));
+        assert_state!(session.fsm.current_state(), States::Rcpt);
     }
 
     #[test]
@@ -314,7 +286,7 @@ mod tests {
         assert_eq!(res2.action, Action::NoReply);
         let res3 = session.process(b".");
         assert_eq!(res3.code, 250);
-        assert_state!(session.fsm.current_state(), &States::Helo(_));
+        assert_state!(session.fsm.current_state(), States::Hello);
     }
 
     #[test]
@@ -330,7 +302,7 @@ mod tests {
         assert_eq!(res2.action, Action::NoReply);
         let res3 = session.process(b".");
         assert_eq!(res3.code, 250);
-        assert_state!(session.fsm.current_state(), &States::Helo(_));
+        assert_state!(session.fsm.current_state(), States::Hello);
     }
 
     #[test]
@@ -340,7 +312,7 @@ mod tests {
         session.process(b"mail from:<ship@sea.com>");
         let res = session.process(b"rset");
         assert_eq!(res.code, 250);
-        assert_state!(session.fsm.current_state(), &States::Helo(_));
+        assert_state!(session.fsm.current_state(), States::Hello);
     }
 
     #[test]
@@ -351,7 +323,7 @@ mod tests {
         let res = session.process(b"quit");
         assert_eq!(res.code, 221);
         assert_eq!(res.action, Action::Close);
-        assert_state!(session.fsm.current_state(), &States::Invalid);
+        assert_state!(session.fsm.current_state(), States::Invalid);
     }
 
     #[test]
@@ -360,11 +332,11 @@ mod tests {
         session.process(b"helo a.domain");
         let res1 = session.process(b"vrfy kraken");
         assert_eq!(res1.code, 252);
-        assert_state!(session.fsm.current_state(), &States::Helo(_));
+        assert_state!(session.fsm.current_state(), States::Hello);
         session.process(b"mail from:<ship@sea.com>");
         let res2 = session.process(b"vrfy boat");
         assert_eq!(res2.code, 503);
-        assert_state!(session.fsm.current_state(), &States::Mail(_));
+        assert_state!(session.fsm.current_state(), States::Mail);
     }
 
     struct AuthHandler {}
@@ -395,10 +367,10 @@ mod tests {
         let mut session = new_auth_session();
         let mut res = session.process(b"ehlo a.domain");
         assert_eq!(res.code, 250);
-        assert_state!(session.fsm.current_state(), &States::HeloAuth(_));
+        assert_state!(session.fsm.current_state(), States::HelloAuth);
         res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=");
         assert_eq!(res.code, 235);
-        assert_state!(session.fsm.current_state(), &States::Helo(_));
+        assert_state!(session.fsm.current_state(), States::Hello);
     }
 
     #[test]
@@ -406,10 +378,10 @@ mod tests {
         let mut session = new_auth_session();
         let mut res = session.process(b"ehlo a.domain");
         assert_eq!(res.code, 250);
-        assert_state!(session.fsm.current_state(), &States::HeloAuth(_));
+        assert_state!(session.fsm.current_state(), States::HelloAuth);
         res = session.process(b"auth plain eGVzdAB0ZXN0ADEyMzQ=");
         assert_eq!(res.code, 535);
-        assert_state!(session.fsm.current_state(), &States::HeloAuth(_));
+        assert_state!(session.fsm.current_state(), States::HelloAuth);
     }
 
     #[test]
@@ -417,17 +389,17 @@ mod tests {
         let mut session = new_auth_session();
         let mut res = session.process(b"ehlo a.domain");
         assert_eq!(res.code, 250);
-        assert_state!(session.fsm.current_state(), &States::HeloAuth(_));
+        assert_state!(session.fsm.current_state(), States::HelloAuth);
         res = session.process(b"auth plain");
         assert_eq!(res.code, 334);
         match res.message {
             Message::Fixed("") => {}
             _ => assert!(false, "Server did not send empty challenge"),
         };
-        assert_state!(session.fsm.current_state(), &States::Auth(_));
+        assert_state!(session.fsm.current_state(), States::Auth);
         res = session.process(b"dGVzdAB0ZXN0ADEyMzQ=");
         assert_eq!(res.code, 235);
-        assert_state!(session.fsm.current_state(), &States::Helo(_));
+        assert_state!(session.fsm.current_state(), States::Hello);
     }
 
     #[test]
@@ -437,7 +409,7 @@ mod tests {
         session.process(b"auth plain");
         let res = session.process(b"eGVzdAB0ZXN0ADEyMzQ=");
         assert_eq!(res.code, 535);
-        assert_state!(session.fsm.current_state(), &States::HeloAuth(_));
+        assert_state!(session.fsm.current_state(), States::HelloAuth);
     }
 
 }

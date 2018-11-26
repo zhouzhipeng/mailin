@@ -3,10 +3,7 @@ use nom;
 use nom::types::CompleteByteSlice;
 use nom::{is_alphanumeric, space};
 
-use smtp::{
-    AuthPlainCmd, AuthPlainEmptyCmd, Cmd, DataCmd, EhloCmd, HeloCmd, MailCmd, NoopCmd, QuitCmd,
-    RcptCmd, RsetCmd, StartTlsCmd, VrfyCmd, MISSING_PARAMETER, SYNTAX_ERROR,
-};
+use smtp::{Cmd, Credentials, MISSING_PARAMETER, SYNTAX_ERROR};
 use std::str;
 use Response;
 
@@ -40,7 +37,7 @@ named!(helo(CompleteByteSlice) -> Cmd,
            tag_no_case!("helo") >>
                space >>
                domain: hello_domain >>
-               (Cmd::Helo(HeloCmd{domain}))
+               (Cmd::Helo{domain})
        )
 );
 
@@ -49,7 +46,7 @@ named!(ehlo(CompleteByteSlice) -> Cmd,
            tag_no_case!("ehlo") >>
                space >>
                domain: hello_domain >>
-               (Cmd::Ehlo(EhloCmd{domain}))
+               (Cmd::Ehlo{domain})
        )
 );
 
@@ -84,7 +81,7 @@ named!(mail(CompleteByteSlice) -> Cmd,
                path: mail_path >>
                tag!(">") >>
                is8bit: is8bitmime >>
-               (Cmd::Mail(MailCmd{reverse_path: path, is8bit}))
+               (Cmd::Mail{reverse_path: path, is8bit})
        )
 );
 
@@ -95,28 +92,28 @@ named!(rcpt(CompleteByteSlice) -> Cmd,
                tag_no_case!("to:<") >>
                path: mail_path >>
                tag!(">") >>
-               (Cmd::Rcpt(RcptCmd{forward_path: path}))
+               (Cmd::Rcpt{forward_path: path})
        )
 );
 
 named!(data(CompleteByteSlice) -> Cmd,
        do_parse!(
            tag_no_case!("data") >>
-               (Cmd::Data(DataCmd{}))
+               (Cmd::Data)
        )
 );
 
 named!(rset(CompleteByteSlice) -> Cmd,
        do_parse!(
            tag_no_case!("rset") >>
-               (Cmd::Rset(RsetCmd{}))
+               (Cmd::Rset)
        )
 );
 
 named!(quit(CompleteByteSlice) -> Cmd,
        do_parse!(
            tag_no_case!("quit") >>
-               (Cmd::Quit(QuitCmd{}))
+               (Cmd::Quit)
        )
 );
 
@@ -125,21 +122,21 @@ named!(vrfy(CompleteByteSlice) -> Cmd,
            tag_no_case!("vrfy") >>
                space >>
                take_all >>
-               (Cmd::Vrfy(VrfyCmd{}))
+               (Cmd::Vrfy)
        )
 );
 
 named!(noop(CompleteByteSlice) -> Cmd,
        do_parse!(
            tag_no_case!("noop") >>
-               (Cmd::Noop(NoopCmd{}))
+               (Cmd::Noop)
        )
 );
 
 named!(starttls(CompleteByteSlice) -> Cmd,
        do_parse!(
            tag_no_case!("starttls") >>
-               (Cmd::StartTls(StartTlsCmd{}))
+               (Cmd::StartTls)
        )
 );
 
@@ -184,27 +181,32 @@ fn from_utf8(i: CompleteByteSlice) -> Result<&str, str::Utf8Error> {
 
 fn sasl_plain_cmd(param: &[u8]) -> Cmd {
     if param.is_empty() {
-        Cmd::AuthPlainEmpty(AuthPlainEmptyCmd {})
+        Cmd::AuthPlainEmpty
     } else {
-        Cmd::AuthPlain(decode_sasl_plain(param))
+        let creds = decode_sasl_plain(param);
+        Cmd::AuthPlain {
+            authorization_id: creds.authorization_id,
+            authentication_id: creds.authentication_id,
+            password: creds.password,
+        }
     }
 }
 
 // Decodes the base64 encoded plain authentication parameter
-pub fn decode_sasl_plain(param: &[u8]) -> AuthPlainCmd {
+pub(crate) fn decode_sasl_plain(param: &[u8]) -> Credentials {
     let decoded = base64::decode(param);
     if let Ok(bytes) = decoded {
         let mut fields = bytes.split(|b| b == &0u8);
         let authorization_id = next_string(&mut fields);
         let authentication_id = next_string(&mut fields);
         let password = next_string(&mut fields);
-        AuthPlainCmd {
+        Credentials {
             authorization_id,
             authentication_id,
             password,
         }
     } else {
-        AuthPlainCmd {
+        Credentials {
             authorization_id: String::default(),
             authentication_id: String::default(),
             password: String::default(),
@@ -229,11 +231,11 @@ mod tests {
     fn auth_initial() {
         let res = parse(b"auth plain dGVzdAB0ZXN0ADEyMzQ=");
         match res {
-            Ok(Cmd::AuthPlain(AuthPlainCmd {
+            Ok(Cmd::AuthPlain {
                 authorization_id,
                 authentication_id,
                 password,
-            })) => {
+            }) => {
                 assert_eq!(authorization_id, "test");
                 assert_eq!(authentication_id, "test");
                 assert_eq!(password, "1234");
@@ -246,7 +248,7 @@ mod tests {
     fn auth_empty() {
         let res = parse(b"auth plain");
         match res {
-            Ok(Cmd::AuthPlainEmpty(AuthPlainEmptyCmd {})) => {}
+            Ok(Cmd::AuthPlainEmpty) => {}
             _ => assert!(
                 false,
                 "Auth plain without initial response incorrectly parsed"
