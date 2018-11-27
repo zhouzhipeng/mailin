@@ -84,7 +84,6 @@ pub trait Handler {
     }
 }
 
-//TODO: Move
 #[derive(Debug)]
 pub enum AuthMechanism {
     Plain,

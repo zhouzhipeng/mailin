@@ -60,6 +60,8 @@ pub enum Cmd<'a> {
     },
     // Dummy command to signify end of data
     DataEnd,
+    // Dummy command sent when STARTTLS was successful
+    StartedTls,
 }
 
 pub(crate) struct Credentials {
@@ -127,7 +129,7 @@ impl SessionBuilder {
         Session {
             name: self.name.clone(),
             handler,
-            fsm: StateMachine::new(remote, self.auth_extension),
+            fsm: StateMachine::new(remote, self.auth_extension, self.start_tls_extension),
             start_tls_extension: self.start_tls_extension,
             auth_extension: self.auth_extension,
         }
@@ -143,6 +145,7 @@ impl<H: Handler> Session<H> {
     /// STARTTLS active
     pub fn tls_active(&mut self) {
         self.start_tls_extension = false;
+        self.command(Cmd::StartedTls);
     }
 
     /// Process a line sent by the client.
@@ -207,7 +210,7 @@ impl<H: Handler> Session<H> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsm::States;
+    use fsm::SmtpState;
     use std::net::Ipv4Addr;
     use {Action, AuthResult, Message};
 
@@ -239,10 +242,10 @@ mod tests {
         let mut session = new_session();
         let res1 = session.process(b"helo a.domain");
         assert_eq!(res1.code, 250);
-        assert_state!(session.fsm.current_state(), States::Hello);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
         let res2 = session.process(b"ehlo b.domain");
         assert_eq!(res2.code, 250);
-        assert_state!(session.fsm.current_state(), States::Hello);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
 
     #[test]
@@ -251,7 +254,7 @@ mod tests {
         session.process(b"helo a.domain");
         let res = session.process(b"mail from:<ship@sea.com>");
         assert_eq!(res.code, 250);
-        assert_state!(session.fsm.current_state(), States::Mail);
+        assert_state!(session.fsm.current_state(), SmtpState::Mail);
     }
 
     #[test]
@@ -259,7 +262,7 @@ mod tests {
         let mut session = new_session();
         let res = session.process(b"helo world\x40\xff");
         assert_eq!(res.code, 500);
-        assert_state!(session.fsm.current_state(), States::Idle);
+        assert_state!(session.fsm.current_state(), SmtpState::Idle);
     }
 
     #[test]
@@ -271,7 +274,7 @@ mod tests {
         assert_eq!(res1.code, 250);
         let res2 = session.process(b"rcpt to:<kraken@sea.com>");
         assert_eq!(res2.code, 250);
-        assert_state!(session.fsm.current_state(), States::Rcpt);
+        assert_state!(session.fsm.current_state(), SmtpState::Rcpt);
     }
 
     #[test]
@@ -286,7 +289,7 @@ mod tests {
         assert_eq!(res2.action, Action::NoReply);
         let res3 = session.process(b".");
         assert_eq!(res3.code, 250);
-        assert_state!(session.fsm.current_state(), States::Hello);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
 
     #[test]
@@ -302,7 +305,7 @@ mod tests {
         assert_eq!(res2.action, Action::NoReply);
         let res3 = session.process(b".");
         assert_eq!(res3.code, 250);
-        assert_state!(session.fsm.current_state(), States::Hello);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
 
     #[test]
@@ -312,7 +315,7 @@ mod tests {
         session.process(b"mail from:<ship@sea.com>");
         let res = session.process(b"rset");
         assert_eq!(res.code, 250);
-        assert_state!(session.fsm.current_state(), States::Hello);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
 
     #[test]
@@ -323,7 +326,7 @@ mod tests {
         let res = session.process(b"quit");
         assert_eq!(res.code, 221);
         assert_eq!(res.action, Action::Close);
-        assert_state!(session.fsm.current_state(), States::Invalid);
+        assert_state!(session.fsm.current_state(), SmtpState::Invalid);
     }
 
     #[test]
@@ -332,11 +335,11 @@ mod tests {
         session.process(b"helo a.domain");
         let res1 = session.process(b"vrfy kraken");
         assert_eq!(res1.code, 252);
-        assert_state!(session.fsm.current_state(), States::Hello);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
         session.process(b"mail from:<ship@sea.com>");
         let res2 = session.process(b"vrfy boat");
         assert_eq!(res2.code, 503);
-        assert_state!(session.fsm.current_state(), States::Mail);
+        assert_state!(session.fsm.current_state(), SmtpState::Mail);
     }
 
     struct AuthHandler {}
@@ -367,10 +370,10 @@ mod tests {
         let mut session = new_auth_session();
         let mut res = session.process(b"ehlo a.domain");
         assert_eq!(res.code, 250);
-        assert_state!(session.fsm.current_state(), States::HelloAuth);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
         res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=");
         assert_eq!(res.code, 235);
-        assert_state!(session.fsm.current_state(), States::Hello);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
 
     #[test]
@@ -378,10 +381,10 @@ mod tests {
         let mut session = new_auth_session();
         let mut res = session.process(b"ehlo a.domain");
         assert_eq!(res.code, 250);
-        assert_state!(session.fsm.current_state(), States::HelloAuth);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
         res = session.process(b"auth plain eGVzdAB0ZXN0ADEyMzQ=");
         assert_eq!(res.code, 535);
-        assert_state!(session.fsm.current_state(), States::HelloAuth);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }
 
     #[test]
@@ -389,17 +392,17 @@ mod tests {
         let mut session = new_auth_session();
         let mut res = session.process(b"ehlo a.domain");
         assert_eq!(res.code, 250);
-        assert_state!(session.fsm.current_state(), States::HelloAuth);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
         res = session.process(b"auth plain");
         assert_eq!(res.code, 334);
         match res.message {
             Message::Fixed("") => {}
             _ => assert!(false, "Server did not send empty challenge"),
         };
-        assert_state!(session.fsm.current_state(), States::Auth);
+        assert_state!(session.fsm.current_state(), SmtpState::Auth);
         res = session.process(b"dGVzdAB0ZXN0ADEyMzQ=");
         assert_eq!(res.code, 235);
-        assert_state!(session.fsm.current_state(), States::Hello);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
 
     #[test]
@@ -409,7 +412,7 @@ mod tests {
         session.process(b"auth plain");
         let res = session.process(b"eGVzdAB0ZXN0ADEyMzQ=");
         assert_eq!(res.code, 535);
-        assert_state!(session.fsm.current_state(), States::HelloAuth);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }
 
 }
