@@ -9,13 +9,13 @@ use std::borrow::BorrowMut;
 use std::io::{sink, Write};
 use std::net::IpAddr;
 use {
-    Action, AuthMechanism, DataResult, Handler, HeloResult, Response, BAD_HELLO, OK,
+    Action, AuthMechanism, AuthResult, DataResult, Handler, HeloResult, Response, BAD_HELLO, OK,
     TRANSACTION_FAILED,
 };
 
 #[cfg(test)]
 #[derive(Debug)]
-pub(crate) enum States {
+pub(crate) enum SmtpState {
     Invalid,
     Idle,
     Hello,
@@ -26,14 +26,27 @@ pub(crate) enum States {
     Data,
 }
 
+#[derive(PartialEq)]
+enum TlsState {
+    Unavailable,
+    Inactive,
+    Active,
+}
+
+enum AuthState {
+    Unavailable,
+    RequiresAuth,
+    Authenticated,
+}
+
 trait State {
     #[cfg(test)]
-    fn id(&self) -> States;
+    fn id(&self) -> SmtpState;
 
     // Handle an incoming command and return the next state
     fn handle(
         self: Box<Self>,
-        config: &StateMachineConfig,
+        fsm: &mut StateMachine,
         handler: &mut Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>);
@@ -42,9 +55,8 @@ trait State {
     // Some states, e.g Data, need to process input lines differently and will
     // override this method.
     fn process_line<'a>(self: &mut Self, line: &'a [u8]) -> Either<Cmd<'a>, Response> {
-        parse(line)
-            .map(Left)
-            .unwrap_or_else(Right)
+        trace!("> {}", String::from_utf8_lossy(line));
+        parse(line).map(Left).unwrap_or_else(Right)
     }
 }
 
@@ -89,14 +101,14 @@ where
 
 fn default_handler(
     current: Box<State>,
-    config: &StateMachineConfig,
+    fsm: &StateMachine,
     handler: &mut Handler,
     cmd: &Cmd,
 ) -> (Response, Option<Box<State>>) {
     match *cmd {
         Cmd::Quit => (GOODBYE.clone(), None),
-        Cmd::Helo { domain } => handle_helo(current, config, handler, domain),
-        Cmd::Ehlo { domain } => handle_ehlo(current, config, handler, domain),
+        Cmd::Helo { domain } => handle_helo(current, fsm, handler, domain),
+        Cmd::Ehlo { domain } => handle_ehlo(current, fsm, handler, domain),
         _ => unhandled(current),
     }
 }
@@ -107,46 +119,63 @@ fn unhandled(current: Box<State>) -> (Response, Option<Box<State>>) {
 
 fn handle_helo(
     current: Box<State>,
-    config: &StateMachineConfig,
+    fsm: &StateMachine,
     handler: &mut Handler,
     domain: &str,
 ) -> (Response, Option<Box<State>>) {
-    if config.require_auth {
-        // If authentication is required the client should be using EHLO
-        (BAD_HELLO.clone(), Some(current))
-    } else {
-        let res = Response::from(handler.helo(config.ip, domain));
-        next_state(current, res, || {
-            Box::new(Hello {
-                domain: domain.to_owned(),
+    match fsm.auth {
+        AuthState::Unavailable => {
+            let res = Response::from(handler.helo(fsm.ip, domain));
+            next_state(current, res, || {
+                Box::new(Hello {
+                    domain: domain.to_owned(),
+                })
             })
-        })
+        }
+        _ => {
+            // If authentication is required the client should be using EHLO
+            (BAD_HELLO.clone(), Some(current))
+        }
     }
 }
 
 fn handle_ehlo(
     current: Box<State>,
-    config: &StateMachineConfig,
+    fsm: &StateMachine,
     handler: &mut Handler,
     domain: &str,
 ) -> (Response, Option<Box<State>>) {
-    let res = match handler.helo(config.ip, domain) {
+    let res = match handler.helo(fsm.ip, domain) {
         HeloResult::Ok => Response::ehlo_ok(),
         helo_res => Response::from(helo_res),
     };
-    if config.require_auth {
-        next_state(current, res, || {
-            Box::new(HelloAuth {
-                domain: domain.to_owned(),
-            })
-        })
-    } else {
-        next_state(current, res, || {
+    match fsm.auth {
+        AuthState::Unavailable => next_state(current, res, || {
             Box::new(Hello {
                 domain: domain.to_owned(),
             })
-        })
+        }),
+        _ => next_state(current, res, || {
+            Box::new(HelloAuth {
+                domain: domain.to_owned(),
+            })
+        }),
     }
+}
+
+fn authenticate(
+    fsm: &mut StateMachine,
+    handler: &mut Handler,
+    authorization_id: &str,
+    authentication_id: &str,
+    password: &str,
+) -> Response {
+    let auth_res = handler.auth_plain(authorization_id, authentication_id, password);
+    fsm.auth = match auth_res {
+        AuthResult::Ok => AuthState::Authenticated,
+        _ => AuthState::RequiresAuth,
+    };
+    Response::from(auth_res)
 }
 
 //------------------------------------------------------------------------------
@@ -155,17 +184,23 @@ struct Idle {}
 
 impl State for Idle {
     #[cfg(test)]
-    fn id(&self) -> States {
-        States::Idle
+    fn id(&self) -> SmtpState {
+        SmtpState::Idle
     }
 
     fn handle(
         self: Box<Self>,
-        config: &StateMachineConfig,
+        fsm: &mut StateMachine,
         handler: &mut Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
-        default_handler(self, config, handler, &cmd)
+        match cmd {
+            Cmd::StartedTls => {
+                fsm.tls = TlsState::Active;
+                (EMPTY_RESPONSE.clone(), Some(self))
+            }
+            _ => default_handler(self, fsm, handler, &cmd),
+        }
     }
 }
 
@@ -177,13 +212,13 @@ struct Hello {
 
 impl State for Hello {
     #[cfg(test)]
-    fn id(&self) -> States {
-        States::Hello
+    fn id(&self) -> SmtpState {
+        SmtpState::Hello
     }
 
     fn handle(
         self: Box<Self>,
-        config: &StateMachineConfig,
+        fsm: &mut StateMachine,
         handler: &mut Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
@@ -192,7 +227,7 @@ impl State for Hello {
                 reverse_path,
                 is8bit,
             } => {
-                let res = Response::from(handler.mail(config.ip, &self.domain, reverse_path));
+                let res = Response::from(handler.mail(fsm.ip, &self.domain, reverse_path));
                 transform_state(self, res, |s| {
                     Box::new(Mail {
                         domain: s.domain,
@@ -201,9 +236,11 @@ impl State for Hello {
                     })
                 })
             }
-            Cmd::StartTls => (START_TLS.clone(), Some(Box::new(Idle {}))),
+            Cmd::StartTls if fsm.tls == TlsState::Inactive => {
+                (START_TLS.clone(), Some(Box::new(Idle {})))
+            }
             Cmd::Vrfy => (VERIFY_RESPONSE.clone(), Some(self)),
-            _ => default_handler(self, config, handler, &cmd),
+            _ => default_handler(self, fsm, handler, &cmd),
         }
     }
 }
@@ -216,13 +253,13 @@ struct HelloAuth {
 
 impl State for HelloAuth {
     #[cfg(test)]
-    fn id(&self) -> States {
-        States::HelloAuth
+    fn id(&self) -> SmtpState {
+        SmtpState::HelloAuth
     }
 
     fn handle(
         self: Box<Self>,
-        config: &StateMachineConfig,
+        fsm: &mut StateMachine,
         handler: &mut Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
@@ -233,11 +270,13 @@ impl State for HelloAuth {
                 authentication_id,
                 password,
             } => {
-                let res = Response::from(handler.auth_plain(
+                let res = authenticate(
+                    fsm,
+                    handler,
                     &authorization_id,
                     &authentication_id,
                     &password,
-                ));
+                );
                 transform_state(self, res, |s| Box::new(Hello { domain: s.domain }))
             }
             Cmd::AuthPlainEmpty => {
@@ -250,7 +289,7 @@ impl State for HelloAuth {
                     })),
                 )
             }
-            _ => default_handler(self, config, handler, &cmd),
+            _ => default_handler(self, fsm, handler, &cmd),
         }
     }
 }
@@ -264,29 +303,30 @@ struct Auth {
 
 impl State for Auth {
     #[cfg(test)]
-    fn id(&self) -> States {
-        States::Auth
+    fn id(&self) -> SmtpState {
+        SmtpState::Auth
     }
 
     fn handle(
         self: Box<Self>,
-        _config: &StateMachineConfig,
+        fsm: &mut StateMachine,
         handler: &mut Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
         match cmd {
             Cmd::AuthResponse { response } => {
-                let auth_res = match self.mechanism {
+                let res = match self.mechanism {
                     AuthMechanism::Plain => {
                         let creds = decode_sasl_plain(response);
-                        handler.auth_plain(
+                        authenticate(
+                            fsm,
+                            handler,
                             &creds.authorization_id,
                             &creds.authentication_id,
                             &creds.password,
                         )
                     }
                 };
-                let res = Response::from(auth_res);
                 let domain = self.domain.clone();
                 if res.is_error {
                     (res, Some(Box::new(HelloAuth { domain })))
@@ -313,13 +353,13 @@ struct Mail {
 
 impl State for Mail {
     #[cfg(test)]
-    fn id(&self) -> States {
-        States::Mail
+    fn id(&self) -> SmtpState {
+        SmtpState::Mail
     }
 
     fn handle(
         self: Box<Self>,
-        config: &StateMachineConfig,
+        fsm: &mut StateMachine,
         handler: &mut Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
@@ -342,7 +382,7 @@ impl State for Mail {
                     domain: self.domain.clone(),
                 })),
             ),
-            _ => default_handler(self, config, handler, &cmd),
+            _ => default_handler(self, fsm, handler, &cmd),
         }
     }
 }
@@ -358,13 +398,13 @@ struct Rcpt {
 
 impl State for Rcpt {
     #[cfg(test)]
-    fn id(&self) -> States {
-        States::Rcpt
+    fn id(&self) -> SmtpState {
+        SmtpState::Rcpt
     }
 
     fn handle(
         self: Box<Self>,
-        config: &StateMachineConfig,
+        fsm: &mut StateMachine,
         handler: &mut Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
@@ -405,7 +445,7 @@ impl State for Rcpt {
                     domain: self.domain.clone(),
                 })),
             ),
-            _ => default_handler(self, config, handler, &cmd),
+            _ => default_handler(self, fsm, handler, &cmd),
         }
     }
 }
@@ -419,13 +459,13 @@ struct Data {
 
 impl State for Data {
     #[cfg(test)]
-    fn id(&self) -> States {
-        States::Data
+    fn id(&self) -> SmtpState {
+        SmtpState::Data
     }
 
     fn handle(
         self: Box<Self>,
-        _config: &StateMachineConfig,
+        _fsm: &mut StateMachine,
         _handler: &mut Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
@@ -457,36 +497,41 @@ impl State for Data {
 }
 //------------------------------------------------------------------------------
 
-struct StateMachineConfig {
-    ip: IpAddr,
-    require_auth: bool,
-}
-
 pub(crate) struct StateMachine {
-    config: StateMachineConfig,
-    current: Option<Box<State>>,
+    ip: IpAddr,
+    auth: AuthState,
+    tls: TlsState,
+    smtp: Option<Box<State>>,
 }
 
 impl StateMachine {
-    pub fn new(ip: IpAddr, require_auth: bool) -> Self {
+    pub fn new(ip: IpAddr, require_auth: bool, allow_start_tls: bool) -> Self {
+        let auth = ternary!(
+            require_auth,
+            AuthState::RequiresAuth,
+            AuthState::Unavailable
+        );
+        let tls = ternary!(allow_start_tls, TlsState::Inactive, TlsState::Unavailable);
         Self {
-            config: StateMachineConfig { ip, require_auth },
-            current: Some(Box::new(Idle {})),
+            ip,
+            auth,
+            tls,
+            smtp: Some(Box::new(Idle {})),
         }
     }
 
     // Respond and change state with the given command
     pub fn command(&mut self, handler: &mut Handler, cmd: Cmd) -> Response {
-        let (response, next_state) = match self.current.take() {
-            Some(last_state) => last_state.handle(&self.config, handler, cmd),
+        let (response, next_state) = match self.smtp.take() {
+            Some(last_state) => last_state.handle(self, handler, cmd),
             None => (INVALID_STATE.clone(), None),
         };
-        self.current = next_state;
+        self.smtp = next_state;
         response
     }
 
     pub fn process_line<'a>(&mut self, line: &'a [u8]) -> Either<Cmd<'a>, Response> {
-        match self.current {
+        match self.smtp {
             Some(ref mut s) => {
                 let s: &mut State = s.borrow_mut();
                 s.process_line(line)
@@ -496,8 +541,8 @@ impl StateMachine {
     }
 
     #[cfg(test)]
-    pub fn current_state(&self) -> States {
-        let id = self.current.as_ref().map(|s| s.id());
-        id.unwrap_or(States::Invalid)
+    pub fn current_state(&self) -> SmtpState {
+        let id = self.smtp.as_ref().map(|s| s.id());
+        id.unwrap_or(SmtpState::Invalid)
     }
 }
