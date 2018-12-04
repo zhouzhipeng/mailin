@@ -1,4 +1,39 @@
 //! A library for building smtp servers.
+//!
+//! The library supplies a parser and SMTP state machine. The user of the library
+//! supplies I/O code and a `Handler` implementation for controlling SMTP sessions.
+//!
+//! The code using the library, sends
+//! lines received to the `Session.process_line()` method. The user also supplies a
+//! `Handler` implementation that makes decisions on whether to accept or reject email
+//! messages. After consulting the `Handler` the `Session.process_line()` function will
+//! return a response that can be sent back to the email client.
+//!
+//! # Pseudo Code
+//! ```rust,ignore
+//! // Create a handler which will control the SMTP session
+//! let hander = create_handler();
+//!
+//! // Create a SMTP session when a new client connects
+//! let session = SessionBuilder::new("mailserver_name").build(client_ip, handler);
+//!
+//! // Read a line from the client and strip the trailing /r/n
+//! let line = read_line(tcp_connection);
+//! // Send the line to the session
+//! let res = session.process(line);
+//!
+//! // Act on the response
+//! match res.action {
+//!     Action::Reply => {
+//!         write_response(tcp_connection, &res)?;
+//!     }
+//!     Action::Close => {
+//!         write_response(tcp_connection, &res)?;
+//!         close(tcp_connection);
+//!     }
+//!     Action::NoReply => (), // No response needed
+//! }
+//! ```
 
 // Use write! for /r/n
 #![cfg_attr(feature = "cargo-clippy", allow(write_with_newline))]
@@ -23,14 +58,16 @@ mod smtp;
 
 pub use smtp::{Session, SessionBuilder};
 
-/// A Handler makes decisions about incoming mail commands.
+/// A `Handler` makes decisions about incoming mail commands.
+///
+/// A Handler implementation must be provided by code using the mailin library.
 ///
 /// All methods have a default implementation that does nothing. A separate handler instance
 /// should be created for each connection.
 ///
 /// # Examples
 /// ```
-/// use mailin::{Handler, HeloResult, RcptResult, DataResult};
+/// # use mailin::{Handler, HeloResult, RcptResult, DataResult};
 ///
 /// # use std::net::IpAddr;
 /// # struct MyHandler{};
@@ -68,7 +105,10 @@ pub trait Handler {
         RcptResult::Ok
     }
 
-    /// Called when a data command is received, should return a writer to write the data to
+    /// Called when a data command is received
+    ///
+    /// This function must return a writer and the email body will be written to
+    /// this writer.
     fn data(&mut self, _domain: &str, _from: &str, _is8bit: bool, _to: &[String]) -> DataResult {
         DataResult::Ok(Box::new(sink()))
     }
@@ -85,13 +125,14 @@ pub trait Handler {
 }
 
 #[derive(Debug)]
+/// Supported authentication mechanisms
 pub enum AuthMechanism {
     Plain,
 }
 
 //------ Response --------------------------------------------------------------
 
-/// A response code and message
+/// Response contains a code and message to be sent back to the client
 #[derive(Clone, Debug)]
 pub struct Response {
     pub code: u16,
@@ -311,6 +352,7 @@ impl From<DataResult> for Response {
     }
 }
 
+/// `AuthResult` is the result of authenticating a smtp session
 pub enum AuthResult {
     /// Authentication successful
     Ok,
