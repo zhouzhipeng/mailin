@@ -36,6 +36,7 @@ where
     num_threads: usize,
 }
 
+/// A running SMTP server
 pub struct RunningServer {
     address: SocketAddr,
     stop: Arc<AtomicBool>,
@@ -43,7 +44,7 @@ pub struct RunningServer {
 }
 
 impl RunningServer {
-    pub fn serve<A, H>(address: A, config: Server<H>) -> Result<Self, Error>
+    pub(crate) fn serve<A, H>(address: A, config: Server<H>) -> Result<Self, Error>
     where
         A: ToSocketAddrs + Display,
         H: Handler + Clone + Send + 'static,
@@ -71,6 +72,7 @@ impl RunningServer {
         })
     }
 
+    /// Stop a running SMTP server
     pub fn stop(self) {
         self.stop.store(true, Ordering::Relaxed);
         // Connect to the socket so that the accept loop is activated

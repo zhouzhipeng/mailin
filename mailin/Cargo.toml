@@ -2,6 +2,11 @@
 name = "mailin"
 version = "0.1.0"
 authors = ["alienscience <saul@alienscience.org.uk>"]
+exclude = ["docs/*"]
+description = "A library for writing SMTP servers"
+keywords = ["smtp","server","email"]
+categories = ["email","network-programming"]
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 nom = "4.0"

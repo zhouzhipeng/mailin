@@ -70,7 +70,7 @@ pub(crate) struct Credentials {
     pub password: String,
 }
 
-/// A single smtp session
+/// A single smtp session connected to a single client
 pub struct Session<H: Handler> {
     name: String,
     handler: H,
@@ -80,11 +80,11 @@ pub struct Session<H: Handler> {
 }
 
 #[derive(Clone)]
-/// Builds smtp sessions.
+/// Builds an smtp `Session`
 ///
 /// # Examples
 /// ```
-/// use mailin::{Session, SessionBuilder, Handler, Action};
+/// # use mailin::{Session, SessionBuilder, Handler, Action};
 ///
 /// # use std::net::{IpAddr, Ipv4Addr};
 /// # struct EmptyHandler{};
