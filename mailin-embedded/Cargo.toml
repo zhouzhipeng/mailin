@@ -2,9 +2,16 @@
 name = "mailin-embedded"
 version = "0.1.0"
 authors = ["alienscience <saul@alienscience.org.uk>"]
+description = "An SMTP server that can be embedded in other programs"
+homepage = "https://gitlab.com/alienscience/mailin"
+repository = "https://gitlab.com/alienscience/mailin"
+readme = "README.md"
+keywords = ["smtp","server","email"]
+categories = ["email","network-programming"]
+license = "MIT OR Apache-2.0"
 
 [dependencies]
-mailin = { path="../mailin" }
+mailin = { path="../mailin", version = "0.1.1" }
 threadpool = "1.0"
 log = "0.4"
 lazy_static = "1.1"
