@@ -5,7 +5,7 @@ This library provides a simple embeddable SMTP server. The
 server uses blocking IO and a threadpool.
 
 # Examples
-```
+```rust
 use mailin_embedded::{Server, SslConfig, Handler};
 
 #[derive(Clone)]
