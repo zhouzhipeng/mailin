@@ -35,7 +35,7 @@ mod utils;
 
 use failure::Error;
 pub use mailin::{AuthMechanism, Handler};
-pub use running::RunningServer;
+pub use crate::running::RunningServer;
 use std::fmt::Display;
 use std::net::ToSocketAddrs;
 

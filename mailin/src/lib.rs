@@ -56,7 +56,7 @@ mod fsm;
 mod parser;
 mod smtp;
 
-pub use smtp::{Session, SessionBuilder};
+pub use crate::smtp::{Session, SessionBuilder};
 
 /// A `Handler` makes decisions about incoming mail commands.
 ///

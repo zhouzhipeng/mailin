@@ -3,9 +3,9 @@ use nom;
 use nom::types::CompleteByteSlice;
 use nom::{is_alphanumeric, space};
 
-use smtp::{Cmd, Credentials, MISSING_PARAMETER, SYNTAX_ERROR};
+use crate::smtp::{Cmd, Credentials, MISSING_PARAMETER, SYNTAX_ERROR};
 use std::str;
-use Response;
+use crate::Response;
 
 //----- Parser -----------------------------------------------------------------
 

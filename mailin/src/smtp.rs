@@ -2,8 +2,8 @@ use std::net::IpAddr;
 use std::str;
 
 use either::{Left, Right};
-use fsm::StateMachine;
-use {Action, Handler, Response};
+use crate::fsm::StateMachine;
+use crate::{Action, Handler, Response};
 
 //------ Responses -------------------------------------------------------------
 
@@ -210,9 +210,9 @@ impl<H: Handler> Session<H> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsm::SmtpState;
+    use crate::fsm::SmtpState;
     use std::net::Ipv4Addr;
-    use {Action, AuthResult, Message};
+    use crate::{Action, AuthResult, Message};
 
     struct EmptyHandler {}
     impl Handler for EmptyHandler {}

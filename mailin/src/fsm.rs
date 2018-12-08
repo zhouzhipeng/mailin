@@ -1,5 +1,5 @@
-use parser::{decode_sasl_plain, parse};
-use smtp::{
+use crate::parser::{decode_sasl_plain, parse};
+use crate::smtp::{
     Cmd, BAD_SEQUENCE_COMMANDS, EMPTY_RESPONSE, GOODBYE, INVALID_STATE, START_DATA, START_TLS,
     VERIFY_RESPONSE,
 };
@@ -8,7 +8,7 @@ use either::*;
 use std::borrow::BorrowMut;
 use std::io::{sink, Write};
 use std::net::IpAddr;
-use {
+use crate::{
     Action, AuthMechanism, AuthResult, DataResult, Handler, HeloResult, Response, BAD_HELLO, OK,
     TRANSACTION_FAILED,
 };

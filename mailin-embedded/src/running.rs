@@ -13,8 +13,8 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 use threadpool::ThreadPool;
-use utils::{slurp, trim};
-use {Server, SslConfig};
+use crate::utils::{slurp, trim};
+use crate::{Server, SslConfig};
 
 lazy_static! {
     static ref FIVE_MINUTES: Duration = Duration::new(5 * 60, 0);
