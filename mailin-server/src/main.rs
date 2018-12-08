@@ -1,13 +1,5 @@
-extern crate chrono;
-extern crate getopts;
-extern crate log;
-extern crate mailin_embedded;
-extern crate simplelog;
-
-#[macro_use]
-extern crate failure;
-
 use chrono::Local;
+use failure::format_err;
 use failure::Error;
 use getopts::Options;
 use mailin_embedded::{Server, SslConfig};
@@ -62,7 +54,8 @@ fn setup_logger(log_dir: &str) -> Result<(), Error> {
             },
             file,
         ),
-    ]).map_err(|err| format_err!("Cannot initialize logger: {}", err))
+    ])
+    .map_err(|err| format_err!("Cannot initialize logger: {}", err))
 }
 
 fn print_usage(program: &str, opts: &Options) {

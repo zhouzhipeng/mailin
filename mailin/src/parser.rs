@@ -1,11 +1,11 @@
 use base64;
 use nom;
 use nom::types::CompleteByteSlice;
-use nom::{is_alphanumeric, space};
+use nom::*;
 
 use crate::smtp::{Cmd, Credentials, MISSING_PARAMETER, SYNTAX_ERROR};
-use std::str;
 use crate::Response;
+use std::str;
 
 //----- Parser -----------------------------------------------------------------
 

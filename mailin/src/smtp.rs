@@ -1,9 +1,11 @@
 use std::net::IpAddr;
 use std::str;
 
-use either::{Left, Right};
 use crate::fsm::StateMachine;
 use crate::{Action, Handler, Response};
+use either::{Left, Right};
+use lazy_static::lazy_static;
+use ternop::ternary;
 
 //------ Responses -------------------------------------------------------------
 
@@ -211,8 +213,8 @@ impl<H: Handler> Session<H> {
 mod tests {
     use super::*;
     use crate::fsm::SmtpState;
-    use std::net::Ipv4Addr;
     use crate::{Action, AuthResult, Message};
+    use std::net::Ipv4Addr;
 
     struct EmptyHandler {}
     impl Handler for EmptyHandler {}

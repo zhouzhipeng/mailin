@@ -9,6 +9,7 @@ readme = "README.md"
 keywords = ["smtp","server","email"]
 categories = ["email","network-programming"]
 license = "MIT OR Apache-2.0"
+edition = "2018"
 
 [dependencies]
 mailin = { path="../mailin", version = "0.1.1" }

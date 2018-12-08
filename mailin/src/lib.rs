@@ -36,19 +36,10 @@
 //! ```
 
 // Use write! for /r/n
-#![cfg_attr(feature = "cargo-clippy", allow(write_with_newline))]
+#![cfg_attr(feature = "cargo-clippy", allow(clippy::write_with_newline))]
 
-extern crate base64;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate nom;
-#[macro_use]
-extern crate ternop;
-extern crate either;
-
+use lazy_static::lazy_static;
+use log::trace;
 use std::io;
 use std::io::{sink, Write};
 use std::net::IpAddr;
@@ -218,18 +209,20 @@ impl Response {
     /// Write the response to the given writer
     pub fn write_to(&self, out: &mut Write) -> io::Result<()> {
         match self.message {
-            Message::Dynamic(ref head, ref tail) => if tail.is_empty() {
-                write!(out, "{} {}\r\n", self.code, head)?;
-            } else {
-                write!(out, "{}-{}\r\n", self.code, head)?;
-                for i in 0..tail.len() {
-                    if tail.len() > 1 && i < tail.len() - 1 {
-                        write!(out, "{}-{}\r\n", self.code, tail[i])?;
-                    } else {
-                        write!(out, "{} {}\r\n", self.code, tail[i])?;
+            Message::Dynamic(ref head, ref tail) => {
+                if tail.is_empty() {
+                    write!(out, "{} {}\r\n", self.code, head)?;
+                } else {
+                    write!(out, "{}-{}\r\n", self.code, head)?;
+                    for i in 0..tail.len() {
+                        if tail.len() > 1 && i < tail.len() - 1 {
+                            write!(out, "{}-{}\r\n", self.code, tail[i])?;
+                        } else {
+                            write!(out, "{} {}\r\n", self.code, tail[i])?;
+                        }
                     }
                 }
-            },
+            }
             Message::Fixed(s) => write!(out, "{} {}\r\n", self.code, s)?,
             Message::Empty => (),
         };

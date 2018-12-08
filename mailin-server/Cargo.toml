@@ -2,6 +2,7 @@
 name = "mailin-server"
 version = "0.1.0"
 authors = ["alienscience <saul@alienscience.org.uk>"]
+edition = "2018"
 
 [dependencies]
 mailin-embedded = { path="../mailin-embedded" }

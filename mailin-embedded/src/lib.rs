@@ -19,23 +19,14 @@
 //! server.with_name(domain).with_ssl(ssl_config);
 //! server.serve_forever(addr);
 //! ```
-extern crate bufstream;
-#[macro_use]
-extern crate failure;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-extern crate mailin;
-extern crate openssl;
-extern crate threadpool;
 
 mod running;
 mod utils;
 
+pub use crate::running::RunningServer;
+use failure::format_err;
 use failure::Error;
 pub use mailin::{AuthMechanism, Handler};
-pub use crate::running::RunningServer;
 use std::fmt::Display;
 use std::net::ToSocketAddrs;
 

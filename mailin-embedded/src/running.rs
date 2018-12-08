@@ -1,6 +1,12 @@
+use crate::utils::{slurp, trim};
+use crate::{Server, SslConfig};
 use bufstream::BufStream;
 use failure::Error;
+use failure::{bail, format_err};
+use lazy_static::lazy_static;
+use log::{debug, error, info, trace};
 use mailin::{Action, Handler, Response, Session, SessionBuilder};
+use openssl;
 use openssl::pkey::PKey;
 use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslMethod, SslStream};
 use openssl::x509::X509;
@@ -13,8 +19,6 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 use threadpool::ThreadPool;
-use crate::utils::{slurp, trim};
-use crate::{Server, SslConfig};
 
 lazy_static! {
     static ref FIVE_MINUTES: Duration = Duration::new(5 * 60, 0);
@@ -100,7 +104,8 @@ impl RunningServer {
                 if let Err(err) = Self::run(&name, &stop_flag, &server_state) {
                     error!("{}, exiting", err);
                 }
-            }).map_err(|err| err.into())
+            })
+            .map_err(|err| err.into())
     }
 
     fn run<H>(

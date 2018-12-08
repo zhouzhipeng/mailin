@@ -4,14 +4,16 @@ use crate::smtp::{
     VERIFY_RESPONSE,
 };
 
-use either::*;
-use std::borrow::BorrowMut;
-use std::io::{sink, Write};
-use std::net::IpAddr;
 use crate::{
     Action, AuthMechanism, AuthResult, DataResult, Handler, HeloResult, Response, BAD_HELLO, OK,
     TRANSACTION_FAILED,
 };
+use either::*;
+use log::{error, trace};
+use std::borrow::BorrowMut;
+use std::io::{sink, Write};
+use std::net::IpAddr;
+use ternop::ternary;
 
 #[cfg(test)]
 #[derive(Debug)]
@@ -47,7 +49,7 @@ trait State {
     fn handle(
         self: Box<Self>,
         fsm: &mut StateMachine,
-        handler: &mut Handler,
+        handler: &mut dyn Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>);
 
@@ -102,7 +104,7 @@ where
 fn default_handler(
     current: Box<State>,
     fsm: &StateMachine,
-    handler: &mut Handler,
+    handler: &mut dyn Handler,
     cmd: &Cmd,
 ) -> (Response, Option<Box<State>>) {
     match *cmd {
@@ -120,7 +122,7 @@ fn unhandled(current: Box<State>) -> (Response, Option<Box<State>>) {
 fn handle_helo(
     current: Box<State>,
     fsm: &StateMachine,
-    handler: &mut Handler,
+    handler: &mut dyn Handler,
     domain: &str,
 ) -> (Response, Option<Box<State>>) {
     match fsm.auth {
@@ -142,7 +144,7 @@ fn handle_helo(
 fn handle_ehlo(
     current: Box<State>,
     fsm: &StateMachine,
-    handler: &mut Handler,
+    handler: &mut dyn Handler,
     domain: &str,
 ) -> (Response, Option<Box<State>>) {
     let res = match handler.helo(fsm.ip, domain) {
@@ -165,7 +167,7 @@ fn handle_ehlo(
 
 fn authenticate(
     fsm: &mut StateMachine,
-    handler: &mut Handler,
+    handler: &mut dyn Handler,
     authorization_id: &str,
     authentication_id: &str,
     password: &str,
@@ -191,7 +193,7 @@ impl State for Idle {
     fn handle(
         self: Box<Self>,
         fsm: &mut StateMachine,
-        handler: &mut Handler,
+        handler: &mut dyn Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
         match cmd {
@@ -219,7 +221,7 @@ impl State for Hello {
     fn handle(
         self: Box<Self>,
         fsm: &mut StateMachine,
-        handler: &mut Handler,
+        handler: &mut dyn Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
         match cmd {
@@ -260,7 +262,7 @@ impl State for HelloAuth {
     fn handle(
         self: Box<Self>,
         fsm: &mut StateMachine,
-        handler: &mut Handler,
+        handler: &mut dyn Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
         match cmd {
@@ -310,7 +312,7 @@ impl State for Auth {
     fn handle(
         self: Box<Self>,
         fsm: &mut StateMachine,
-        handler: &mut Handler,
+        handler: &mut dyn Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
         match cmd {
@@ -360,7 +362,7 @@ impl State for Mail {
     fn handle(
         self: Box<Self>,
         fsm: &mut StateMachine,
-        handler: &mut Handler,
+        handler: &mut dyn Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
         match cmd {
@@ -405,7 +407,7 @@ impl State for Rcpt {
     fn handle(
         self: Box<Self>,
         fsm: &mut StateMachine,
-        handler: &mut Handler,
+        handler: &mut dyn Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
         match cmd {
@@ -466,7 +468,7 @@ impl State for Data {
     fn handle(
         self: Box<Self>,
         _fsm: &mut StateMachine,
-        _handler: &mut Handler,
+        _handler: &mut dyn Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<State>>) {
         match cmd {
