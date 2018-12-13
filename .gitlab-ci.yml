@@ -14,7 +14,7 @@ cache:
 # Defines stages which are to be executed
 stages:
   - build
-  - deploy-master
+  - deploy
 
 # Run `cargo test` for the project with stable Rust
 run-build:
