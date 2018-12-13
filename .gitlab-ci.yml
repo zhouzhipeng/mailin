@@ -14,6 +14,7 @@ cache:
 # Defines stages which are to be executed
 stages:
   - build
+  - deploy-master
 
 # Run `cargo test` for the project with stable Rust
 run-build:
@@ -23,3 +24,13 @@ run-build:
     - rustc --version && cargo --version
     - cargo test
 
+deploy-master:
+  stage: deploy
+  tags:
+    - coward
+  script:
+    - cargo run --release
+  environment:
+    name: coward
+  only:
+    - master
