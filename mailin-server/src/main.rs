@@ -1,7 +1,7 @@
 use chrono::Local;
-use failure::format_err;
-use failure::Error;
+use failure::{bail, format_err, Error};
 use getopts::Options;
+use listenfd::ListenFd;
 use mailin_embedded::{Server, SslConfig};
 use simplelog::{
     CombinedLogger, Config, Level, LevelFilter, SharedLogger, SimpleLogger, TermLogger, WriteLogger,
@@ -22,6 +22,7 @@ const OPT_SERVER: &str = "server";
 const OPT_SSL_CERT: &str = "ssl-cert";
 const OPT_SSL_KEY: &str = "ssl-key";
 const OPT_SSL_CHAIN: &str = "ssl-chain";
+const OPT_SOCKET_ACTIVATION: &str = "socket-activation";
 
 #[derive(Clone)]
 struct Handler {}
@@ -63,13 +64,14 @@ fn print_usage(program: &str, opts: &Options) {
     print!("{}", opts.usage(&brief));
 }
 
-fn run() -> Result<(), Error> {
+fn main() -> Result<(), Error> {
     let args: Vec<String> = env::args().collect();
     let mut opts = getopts::Options::new();
     opts.optflag("h", OPT_HELP, "print this help menu");
     opts.optopt("a", OPT_ADDRESS, "the address to listen on", "ADDRESS");
     opts.optopt("l", OPT_LOG, "the directory to write logs to", "LOG_DIR");
     opts.optopt("s", OPT_SERVER, "the name of the mailserver", "SERVER");
+    opts.optflag("", OPT_SOCKET_ACTIVATION, "use socket activation");
     opts.optopt("", OPT_SSL_CERT, "ssl certificate", "PEM_FILE");
     opts.optopt("", OPT_SSL_KEY, "ssl certificate key", "PEM_FILE");
     opts.optopt(
@@ -85,6 +87,7 @@ fn run() -> Result<(), Error> {
         print_usage(&args[0], &opts);
         return Ok(());
     }
+    // TODO: optionally log to file
     let log_directory = matches
         .opt_str(OPT_LOG)
         .unwrap_or_else(|| DEFAULT_WORKING_DIR.to_owned());
@@ -96,20 +99,24 @@ fn run() -> Result<(), Error> {
         },
         (_, _) => SslConfig::None,
     };
-    let addr = matches
-        .opt_str(OPT_ADDRESS)
-        .unwrap_or_else(|| DEFAULT_ADDRESS.to_owned());
     let domain = matches
         .opt_str(OPT_SERVER)
         .unwrap_or_else(|| DOMAIN.to_owned());
     let handler = Handler {};
     let mut server = Server::new(handler);
     server.with_name(domain).with_ssl(ssl_config);
-    server.serve_forever(addr)
-}
-
-fn main() {
-    if let Err(err) = run() {
-        println!("{}", &err);
+    if matches.opt_present(OPT_SOCKET_ACTIVATION) {
+        let mut listenfd = ListenFd::from_env();
+        if let Some(listener) = listenfd.take_tcp_listener(0)? {
+            server.with_tcp_listener(listener);
+        } else {
+            bail!("No tcp socket found for socket activation");
+        }
+    } else {
+        let addr = matches
+            .opt_str(OPT_ADDRESS)
+            .unwrap_or_else(|| DEFAULT_ADDRESS.to_owned());
+        server.with_addr(addr)?;
     }
+    server.serve_forever()
 }
