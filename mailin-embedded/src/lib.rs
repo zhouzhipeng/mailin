@@ -16,8 +16,11 @@
 //! let handler = MyHandler {};
 //! let mut server = Server::new(handler);
 //!
-//! server.with_name(domain).with_ssl(ssl_config);
-//! server.serve_forever(addr);
+//! server.with_name(domain)
+//!    .with_ssl(ssl_config)
+//!    .with_addr(addr)
+//!    .unwrap();
+//! server.serve_forever();
 //! ```
 
 mod running;
@@ -27,8 +30,7 @@ pub use crate::running::RunningServer;
 use failure::format_err;
 use failure::Error;
 pub use mailin::{AuthMechanism, Handler};
-use std::fmt::Display;
-use std::net::ToSocketAddrs;
+use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 
 /// `SslConfig` is used to configure the STARTTLS configuration of the server
 pub enum SslConfig {
@@ -62,6 +64,8 @@ where
     ssl_config: SslConfig,
     num_threads: usize,
     auth: Vec<AuthMechanism>,
+    tcp_listener: Option<TcpListener>,
+    socket_address: Vec<SocketAddr>,
 }
 
 impl<H> Server<H>
@@ -76,6 +80,8 @@ where
             ssl_config: SslConfig::None,
             num_threads: 4,
             auth: Vec::with_capacity(4),
+            tcp_listener: None,
+            socket_address: Vec::with_capacity(4),
         }
     }
 
@@ -98,40 +104,46 @@ where
         self
     }
 
-    /// Set the authentication mechanism supported by the server
+    /// Add an authentication mechanism that will supported by the server
     pub fn with_auth(&mut self, auth: AuthMechanism) -> &mut Self {
         self.auth.push(auth);
         self
     }
 
-    /// Start the SMTP server in a background thread at the given address
-    pub fn serve<A: ToSocketAddrs + Display>(self, address: A) -> Result<RunningServer, Error> {
-        RunningServer::serve(address, self)
+    /// Set a tcp listener from an already open socket
+    pub fn with_tcp_listener(&mut self, listener: TcpListener) -> &mut Self {
+        self.tcp_listener = Some(listener);
+        self
     }
 
-    /// Start the SMTP server and run forever at the given address
-    pub fn serve_forever<A: ToSocketAddrs + Display>(self, address: A) -> Result<(), Error> {
-        let running = RunningServer::serve(address, self)?;
+    /// Add ip addresses and ports to listen on.
+    /// Returns an error if the given socket addresses are not valid.
+    /// ```
+    /// # use mailin_embedded::{Server, Handler};
+    /// # #[derive(Clone)]
+    /// # struct EmptyHandler {}
+    /// # impl Handler for EmptyHandler {}
+    /// # let mut server = Server::new(EmptyHandler {});
+    /// server.with_addr("127.0.0.1:25").unwrap();
+    /// ```
+    pub fn with_addr<A: ToSocketAddrs>(&mut self, addr: A) -> Result<&mut Self, Error> {
+        for addr in addr.to_socket_addrs()? {
+            self.socket_address.push(addr);
+        }
+        Ok(self)
+    }
+
+    /// Start the SMTP server in a background thread
+    pub fn serve(self) -> Result<RunningServer, Error> {
+        RunningServer::serve(self)
+    }
+
+    /// Start the SMTP server and run forever
+    pub fn serve_forever(self) -> Result<(), Error> {
+        let running = RunningServer::serve(self)?;
         running
             .join
             .join()
             .map_err(|_| format_err!("Error joining server"))
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[derive(Clone)]
-    struct EmptyHandler {}
-    impl Handler for EmptyHandler {}
-
-    #[test]
-    fn run_server() {
-        let server = Server::new(EmptyHandler {});
-        let running = server.serve("127.0.0.1:0").unwrap();
-        running.stop();
-    }
-
 }

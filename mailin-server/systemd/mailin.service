@@ -1,0 +1,7 @@
+[Unit]
+Description=Mailin SMTP server
+
+[Service]
+ExecStart=/home/gitlab-runner/deploy/mailin/mailin --socket-activation --log /home/gitlab-runner/deploy/mailin/logs
+User=mailin
+Group=mailin

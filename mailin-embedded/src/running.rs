@@ -10,9 +10,8 @@ use openssl;
 use openssl::pkey::PKey;
 use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslMethod, SslStream};
 use openssl::x509::X509;
-use std::fmt::Display;
 use std::io::{BufRead, Write};
-use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -48,9 +47,8 @@ pub struct RunningServer {
 }
 
 impl RunningServer {
-    pub(crate) fn serve<A, H>(address: A, config: Server<H>) -> Result<Self, Error>
+    pub(crate) fn serve<H>(config: Server<H>) -> Result<Self, Error>
     where
-        A: ToSocketAddrs + Display,
         H: Handler + Clone + Send + 'static,
     {
         let ssl_acceptor = setup_ssl(config.ssl_config)?;
@@ -58,8 +56,13 @@ impl RunningServer {
         if ssl_acceptor.is_some() {
             session_builder.enable_start_tls();
         }
-        let listen = TcpListener::bind(&address)
-            .map_err(|err| format_err!("Cannot open {}: {}", address, err))?;
+        let listen = if let Some(listener) = config.tcp_listener {
+            listener
+        } else {
+            let addr = config.socket_address;
+            TcpListener::bind(&addr[..])
+                .map_err(|err| format_err!("Cannot open listen address : {}", err))?
+        };
         let local_addr = listen.local_addr()?;
         let server_state = ServerState {
             listener: listen,
@@ -285,8 +288,9 @@ mod tests {
 
     #[test]
     fn run_server() {
-        let server = Server::new(EmptyHandler {});
-        let running = server.serve("127.0.0.1:0").unwrap();
+        let mut server = Server::new(EmptyHandler {});
+        server.with_addr("127.0.0.1:0").unwrap();
+        let running = server.serve().unwrap();
         running.stop();
     }
 

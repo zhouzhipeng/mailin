@@ -3,6 +3,7 @@ image: rust:latest
 
 variables:
   CARGO_HOME: $CI_PROJECT_DIR/cargo
+  DEPLOY_TARGET: /home/gitlab-runner/deploy/mailin/mailin
  
 cache:
   key: "$CI_JOB_NAME"
@@ -14,6 +15,7 @@ cache:
 # Defines stages which are to be executed
 stages:
   - build
+  - release
   - deploy
 
 # Run `cargo test` for the project with stable Rust
@@ -24,12 +26,27 @@ run-build:
     - rustc --version && cargo --version
     - cargo test
 
+ 
+release-build:
+  stage: release
+  image: rust:latest
+  script:
+    - cargo build --release
+  artifacts:
+    paths:
+      - target/release/mailin-server
+  only:
+    - master
+
 deploy-master:
   stage: deploy
   tags:
     - coward
+  dependencies:
+    - release-build
   script:
-    - cargo run --release
+    - cp target/release/mailin-server $DEPLOY_TARGET
+    - sudo systemctl restart mailin.socket
   environment:
     name: coward
   only:
