@@ -45,8 +45,8 @@ deploy-master:
   dependencies:
     - release-build
   script:
+    - sudo systemctl stop mailin
     - cp target/release/mailin-server $DEPLOY_TARGET
-    - sudo systemctl restart mailin.socket
   environment:
     name: coward
   only:
