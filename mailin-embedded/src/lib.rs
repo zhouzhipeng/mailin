@@ -23,12 +23,12 @@
 //! server.serve_forever();
 //! ```
 
+mod err;
 mod running;
 mod utils;
 
+use crate::err::Error;
 pub use crate::running::RunningServer;
-use failure::format_err;
-use failure::Error;
 pub use mailin::{AuthMechanism, Handler};
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 
@@ -127,7 +127,10 @@ where
     /// server.with_addr("127.0.0.1:25").unwrap();
     /// ```
     pub fn with_addr<A: ToSocketAddrs>(&mut self, addr: A) -> Result<&mut Self, Error> {
-        for addr in addr.to_socket_addrs()? {
+        for addr in addr
+            .to_socket_addrs()
+            .map_err(|e| Error::with_source("Invalid socket address", e))?
+        {
             self.socket_address.push(addr);
         }
         Ok(self)
@@ -144,6 +147,6 @@ where
         running
             .join
             .join()
-            .map_err(|_| format_err!("Error joining server"))
+            .map_err(|_| Error::new("Error joining server"))
     }
 }
