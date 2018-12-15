@@ -11,7 +11,6 @@ use std::fs::File;
 use std::path::Path;
 
 const DOMAIN: &str = "localhost";
-const DEFAULT_WORKING_DIR: &str = ".";
 const DEFAULT_ADDRESS: &str = "127.0.0.1:8025";
 
 // Command line option names
@@ -28,12 +27,7 @@ const OPT_SOCKET_ACTIVATION: &str = "socket-activation";
 struct Handler {}
 impl mailin_embedded::Handler for Handler {}
 
-fn setup_logger(log_dir: &str) -> Result<(), Error> {
-    let log_path = Path::new(&log_dir);
-    let datetime = Local::now().format("%Y%m%d%H%M%S").to_string();
-    let filename = format!("smtp-{}.log", datetime);
-    let filepath = log_path.join(&filename);
-    let file = File::create(&filepath)?;
+fn setup_logger(log_dir: Option<String>) -> Result<(), Error> {
     let log_level = LevelFilter::Info;
     // Try to create a terminal logger, if this fails use a simple logger
     // to stderr/stdout
@@ -42,21 +36,31 @@ fn setup_logger(log_dir: &str) -> Result<(), Error> {
         Some(tlog) => tlog,
         None => SimpleLogger::new(log_level, Config::default()),
     };
-    CombinedLogger::init(vec![
-        quiet_logger,
-        WriteLogger::new(
-            LevelFilter::Trace,
-            Config {
-                time: Some(Level::Error),
-                level: Some(Level::Error),
-                target: None,
-                location: None,
-                time_format: None,
-            },
-            file,
-        ),
-    ])
-    .map_err(|err| format_err!("Cannot initialize logger: {}", err))
+    if let Some(dir) = log_dir {
+        let log_path = Path::new(&dir);
+        let datetime = Local::now().format("%Y%m%d%H%M%S").to_string();
+        let filename = format!("smtp-{}.log", datetime);
+        let filepath = log_path.join(&filename);
+        let file = File::create(&filepath)?;
+        CombinedLogger::init(vec![
+            quiet_logger,
+            WriteLogger::new(
+                LevelFilter::Trace,
+                Config {
+                    time: Some(Level::Error),
+                    level: Some(Level::Error),
+                    target: None,
+                    location: None,
+                    time_format: None,
+                },
+                file,
+            ),
+        ])
+        .map_err(|err| format_err!("Cannot initialize logger: {}", err))
+    } else {
+        CombinedLogger::init(vec![quiet_logger])
+            .map_err(|err| format_err!("Cannot initialize logger: {}", err))
+    }
 }
 
 fn print_usage(program: &str, opts: &Options) {
@@ -87,11 +91,8 @@ fn main() -> Result<(), Error> {
         print_usage(&args[0], &opts);
         return Ok(());
     }
-    // TODO: optionally log to file
-    let log_directory = matches
-        .opt_str(OPT_LOG)
-        .unwrap_or_else(|| DEFAULT_WORKING_DIR.to_owned());
-    setup_logger(&log_directory)?;
+    let log_directory = matches.opt_str(OPT_LOG);
+    setup_logger(log_directory)?;
     let ssl_config = match (matches.opt_str(OPT_SSL_CERT), matches.opt_str(OPT_SSL_KEY)) {
         (Some(cert_path), Some(key_path)) => SslConfig::SelfSigned {
             cert_path,
