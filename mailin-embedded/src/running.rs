@@ -1,8 +1,7 @@
+use crate::err::Error;
 use crate::utils::{slurp, trim};
 use crate::{Server, SslConfig};
 use bufstream::BufStream;
-use failure::Error;
-use failure::{bail, format_err};
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace};
 use mailin::{Action, Handler, Response, Session, SessionBuilder};
@@ -61,9 +60,11 @@ impl RunningServer {
         } else {
             let addr = config.socket_address;
             TcpListener::bind(&addr[..])
-                .map_err(|err| format_err!("Cannot open listen address : {}", err))?
+                .map_err(|err| Error::with_source("Cannot open listen address", err))?
         };
-        let local_addr = listen.local_addr()?;
+        let local_addr = listen
+            .local_addr()
+            .map_err(|e| Error::with_source("Cannot get local address", e))?;
         let server_state = ServerState {
             listener: listen,
             handler: config.handler,
@@ -108,7 +109,7 @@ impl RunningServer {
                     error!("{}, exiting", err);
                 }
             })
-            .map_err(|err| err.into())
+            .map_err(|e| Error::with_source("Cannot spawn background thread", e))
     }
 
     fn run<H>(
@@ -171,14 +172,14 @@ where
             Action::NoReply => (),
         }
     }
-    bail!("Unexpected Eof")
+    Error::bail("Unexpected Eof")
 }
 
 fn write_response(mut writer: &mut Write, res: &Response) -> Result<(), Error> {
     res.write_to(&mut writer)?;
     writer
         .flush()
-        .map_err(|err| format_err!("Cannot write response: {}", err))
+        .map_err(|e| Error::with_source("Cannot write response", e))
 }
 
 fn upgrade_tls(
@@ -188,11 +189,11 @@ fn upgrade_tls(
     if let Some(acceptor) = ssl_acceptor {
         let ret = acceptor
             .accept(stream)
-            .map_err(|err| format_err!("Cannot upgrade to TLS: {}", err))?;
+            .map_err(|e| Error::with_source("Cannot upgrade to TLS", e))?;
         trace!("Upgrade TLS successful");
         Ok(ret)
     } else {
-        bail!("Cannot upgrade to TLS without an SslAcceptor")
+        Error::bail("Cannot upgrade to TLS without an SslAcceptor")
     }
 }
 
@@ -210,7 +211,7 @@ fn start_session<H: Handler>(
     if let SessionResult::UpgradeTls = res {
         let inner_stream = stream
             .into_inner()
-            .map_err(|err| format_err!("Cannot flush original TcpStream: {}", err))?;
+            .map_err(|e| Error::with_source("Cannot flush original TcpStream", e))?;
         let tls = upgrade_tls(inner_stream, ssl_acceptor)?;
         session.tls_active();
         let mut buf_tls = BufStream::new(tls);

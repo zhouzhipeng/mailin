@@ -117,7 +117,7 @@ fn main() -> Result<(), Error> {
         let addr = matches
             .opt_str(OPT_ADDRESS)
             .unwrap_or_else(|| DEFAULT_ADDRESS.to_owned());
-        server.with_addr(addr)?;
+        server.with_addr(addr).map_err(|e| format_err!("{}", e))?;
     }
-    server.serve_forever()
+    server.serve_forever().map_err(|e| format_err!("{}", e))
 }
