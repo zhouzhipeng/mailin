@@ -311,13 +311,21 @@ mod tests {
     }
 
     #[test]
-    fn rset() {
+    fn rset_hello() {
         let mut session = new_session();
         session.process(b"helo some.domain");
         session.process(b"mail from:<ship@sea.com>");
         let res = session.process(b"rset");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
+    }
+
+    #[test]
+    fn rset_idle() {
+        let mut session = new_session();
+        let res = session.process(b"rset");
+        assert_eq!(res.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::Idle);
     }
 
     #[test]
@@ -368,6 +376,15 @@ mod tests {
     }
 
     #[test]
+    fn noauth_denied() {
+        let mut session = new_auth_session();
+        session.process(b"ehlo a.domain");
+        let res = session.process(b"mail from:<ship@sea.com>");
+        assert_eq!(res.code, 503);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+    }
+
+    #[test]
     fn auth_plain_param() {
         let mut session = new_auth_session();
         let mut res = session.process(b"ehlo a.domain");
@@ -414,6 +431,17 @@ mod tests {
         session.process(b"auth plain");
         let res = session.process(b"eGVzdAB0ZXN0ADEyMzQ=");
         assert_eq!(res.code, 535);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+    }
+
+    #[test]
+    fn rset_with_auth() {
+        let mut session = new_auth_session();
+        session.process(b"ehlo some.domain");
+        session.process(b"auth plain eGVzdAB0ZXN0ADEyMzQ=");
+        session.process(b"mail from:<ship@sea.com>");
+        let res = session.process(b"rset");
+        assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }
 
