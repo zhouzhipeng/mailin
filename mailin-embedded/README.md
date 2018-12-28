@@ -12,13 +12,13 @@ use mailin_embedded::{Server, SslConfig, Handler};
 struct MyHandler {}
 impl Handler for MyHandler{}
 
-let addr = "127.0.0.1:25";
-let domain = "example.com".to_owned();
-let ssl_config = SslConfig::None;
 let handler = MyHandler {};
 let mut server = Server::new(handler);
 
-server.with_name(domain).with_ssl(ssl_config);
-server.serve_forever(addr);
+server.with_name("example.com")
+   .with_ssl(SslConfig::None)
+   .with_addr("127.0.0.1:25")
+   .unwrap();
+server.serve_forever();
 ```
 

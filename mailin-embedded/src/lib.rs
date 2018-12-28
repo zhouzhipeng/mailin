@@ -10,15 +10,12 @@
 //! struct MyHandler {}
 //! impl Handler for MyHandler{}
 //!
-//! let addr = "127.0.0.1:25";
-//! let domain = "example.com".to_owned();
-//! let ssl_config = SslConfig::None;
 //! let handler = MyHandler {};
 //! let mut server = Server::new(handler);
 //!
-//! server.with_name(domain)
-//!    .with_ssl(ssl_config)
-//!    .with_addr(addr)
+//! server.with_name("example.com")
+//!    .with_ssl(SslConfig::None)
+//!    .with_addr("127.0.0.1:25")
 //!    .unwrap();
 //! server.serve_forever();
 //! ```
@@ -86,8 +83,11 @@ where
     }
 
     /// Give the server a name
-    pub fn with_name(&mut self, name: String) -> &mut Self {
-        self.name = name;
+    pub fn with_name<S>(&mut self, name: S) -> &mut Self
+    where
+        S: Into<String>,
+    {
+        self.name = name.into();
         self
     }
 
