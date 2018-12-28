@@ -1,6 +1,6 @@
 [package]
 name = "mailin"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["alienscience <saul@alienscience.org.uk>"]
 exclude = ["docs/*"]
 description = "A library for writing SMTP servers"

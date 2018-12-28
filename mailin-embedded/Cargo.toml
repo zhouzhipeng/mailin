@@ -12,7 +12,7 @@ license = "MIT OR Apache-2.0"
 edition = "2018"
 
 [dependencies]
-mailin = { path="../mailin", version = "0.1.1" }
+mailin = { path="../mailin", version = "0.1.2" }
 threadpool = "1.0"
 log = "0.4"
 lazy_static = "1.1"
