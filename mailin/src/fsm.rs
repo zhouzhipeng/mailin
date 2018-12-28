@@ -119,6 +119,23 @@ fn unhandled(current: Box<State>) -> (Response, Option<Box<State>>) {
     (BAD_SEQUENCE_COMMANDS.clone(), Some(current))
 }
 
+fn handle_rset(fsm: &StateMachine, domain: &str) -> (Response, Option<Box<State>>) {
+    match fsm.auth {
+        AuthState::Unavailable => (
+            OK.clone(),
+            Some(Box::new(Hello {
+                domain: domain.to_string(),
+            })),
+        ),
+        _ => (
+            OK.clone(),
+            Some(Box::new(HelloAuth {
+                domain: domain.to_string(),
+            })),
+        ),
+    }
+}
+
 fn handle_helo(
     current: Box<State>,
     fsm: &StateMachine,
@@ -201,6 +218,7 @@ impl State for Idle {
                 fsm.tls = TlsState::Active;
                 (EMPTY_RESPONSE.clone(), Some(self))
             }
+            Cmd::Rset => (OK.clone(), Some(self)),
             _ => default_handler(self, fsm, handler, &cmd),
         }
     }
@@ -242,6 +260,7 @@ impl State for Hello {
                 (START_TLS.clone(), Some(Box::new(Idle {})))
             }
             Cmd::Vrfy => (VERIFY_RESPONSE.clone(), Some(self)),
+            Cmd::Rset => handle_rset(fsm, &self.domain),
             _ => default_handler(self, fsm, handler, &cmd),
         }
     }
@@ -291,6 +310,7 @@ impl State for HelloAuth {
                     })),
                 )
             }
+            Cmd::Rset => handle_rset(fsm, &self.domain),
             _ => default_handler(self, fsm, handler, &cmd),
         }
     }
@@ -378,12 +398,7 @@ impl State for Mail {
                     })
                 })
             }
-            Cmd::Rset => (
-                OK.clone(),
-                Some(Box::new(Hello {
-                    domain: self.domain.clone(),
-                })),
-            ),
+            Cmd::Rset => handle_rset(fsm, &self.domain),
             _ => default_handler(self, fsm, handler, &cmd),
         }
     }
@@ -441,12 +456,7 @@ impl State for Rcpt {
                     })
                 })
             }
-            Cmd::Rset => (
-                OK.clone(),
-                Some(Box::new(Hello {
-                    domain: self.domain.clone(),
-                })),
-            ),
+            Cmd::Rset => handle_rset(fsm, &self.domain),
             _ => default_handler(self, fsm, handler, &cmd),
         }
     }
