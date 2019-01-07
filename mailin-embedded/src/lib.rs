@@ -26,7 +26,9 @@ mod utils;
 
 use crate::err::Error;
 pub use crate::running::RunningServer;
-pub use mailin::{AuthMechanism, Handler};
+pub use mailin::{
+    AuthMechanism, AuthResult, DataResult, Handler, HeloResult, MailResult, RcptResult,
+};
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 
 /// `SslConfig` is used to configure the STARTTLS configuration of the server

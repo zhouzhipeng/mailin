@@ -250,6 +250,8 @@ pub enum HeloResult {
     Ok,
     /// Return to indicate that Helo verification failed
     BadHelo,
+    /// Return to indicate the ip address is on blocklists
+    BlockedIp,
 }
 
 impl From<HeloResult> for Response {
@@ -257,6 +259,7 @@ impl From<HeloResult> for Response {
         match v {
             HeloResult::Ok => OK.clone(),
             HeloResult::BadHelo => BAD_HELLO.clone(),
+            HeloResult::BlockedIp => BLOCKED_IP.clone(),
         }
     }
 }
@@ -380,6 +383,7 @@ lazy_static! {
     static ref INVALID_CREDENTIALS: Response = Response::fixed(535, "Invalid credentials");
     static ref NO_MAILBOX: Response = Response::fixed(550, "Mailbox unavailable");
     static ref BAD_HELLO: Response = Response::fixed(550, "Bad HELO");
+    static ref BLOCKED_IP: Response = Response::fixed(550, "IP address on blocklists");
     static ref BAD_MAILBOX: Response = Response::fixed(553, "Mailbox name not allowed");
     static ref TRANSACTION_FAILED: Response = Response::fixed(554, "Transaction failed");
 }

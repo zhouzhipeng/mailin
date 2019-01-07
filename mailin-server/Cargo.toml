@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 mailin-embedded = { path="../mailin-embedded" }
+mxdns = { path="../mxdns" }
 log = "0.4"
 simplelog = "0.5"
 chrono = "0.4"
