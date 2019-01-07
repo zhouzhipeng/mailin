@@ -2,12 +2,14 @@ use chrono::Local;
 use failure::{bail, format_err, Error};
 use getopts::Options;
 use listenfd::ListenFd;
-use mailin_embedded::{Server, SslConfig};
+use mailin_embedded::{HeloResult, Server, SslConfig};
+use mxdns::MxDns;
 use simplelog::{
     CombinedLogger, Config, Level, LevelFilter, SharedLogger, SimpleLogger, TermLogger, WriteLogger,
 };
 use std::env;
 use std::fs::File;
+use std::net::IpAddr;
 use std::path::Path;
 
 const DOMAIN: &str = "localhost";
@@ -22,10 +24,24 @@ const OPT_SSL_CERT: &str = "ssl-cert";
 const OPT_SSL_KEY: &str = "ssl-key";
 const OPT_SSL_CHAIN: &str = "ssl-chain";
 const OPT_SOCKET_ACTIVATION: &str = "socket-activation";
+const OPT_BLOCKLIST: &str = "blocklist";
 
 #[derive(Clone)]
-struct Handler {}
-impl mailin_embedded::Handler for Handler {}
+struct Handler {
+    mxdns: MxDns,
+}
+
+impl mailin_embedded::Handler for Handler {
+    fn helo(&mut self, ip: IpAddr, _domain: &str) -> HeloResult {
+        // Does the reverse DNS match the forward dns?
+        if !self.mxdns.fcrdns(ip).unwrap_or(true) {
+            return HeloResult::BadHelo;
+        } else if self.mxdns.is_blocked(ip).unwrap_or(false) {
+            return HeloResult::BlockedIp;
+        }
+        HeloResult::Ok
+    }
+}
 
 fn setup_logger(log_dir: Option<String>) -> Result<(), Error> {
     let log_level = LevelFilter::Info;
@@ -76,6 +92,7 @@ fn main() -> Result<(), Error> {
     opts.optopt("l", OPT_LOG, "the directory to write logs to", "LOG_DIR");
     opts.optopt("s", OPT_SERVER, "the name of the mailserver", "SERVER");
     opts.optflag("", OPT_SOCKET_ACTIVATION, "use socket activation");
+    opts.optmulti("", OPT_BLOCKLIST, "use blocklist", "BLOCKLIST");
     opts.optopt("", OPT_SSL_CERT, "ssl certificate", "PEM_FILE");
     opts.optopt("", OPT_SSL_KEY, "ssl certificate key", "PEM_FILE");
     opts.optopt(
@@ -103,7 +120,9 @@ fn main() -> Result<(), Error> {
     let domain = matches
         .opt_str(OPT_SERVER)
         .unwrap_or_else(|| DOMAIN.to_owned());
-    let handler = Handler {};
+    let blocklists = matches.opt_strs(OPT_BLOCKLIST);
+    let mxdns = MxDns::new(blocklists).map_err(|e| format_err!("{}", e))?;
+    let handler = Handler { mxdns };
     let mut server = Server::new(handler);
     server.with_name(domain).with_ssl(ssl_config);
     if matches.opt_present(OPT_SOCKET_ACTIVATION) {

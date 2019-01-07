@@ -17,3 +17,7 @@ The [mailin-embedded](mailin-embedded) directory contains an SMTP server that ca
 ### mailin server
 
 The  [mailin-server](mailin-server) directory contains an example standalone SMTP server that uses the mailin-embedded library.
+
+### mxdns
+
+The [mxdns](mxdns) directory contains utilities for looking up IP addresses on DNS based blocklists and for doing reverse dns lookups.
