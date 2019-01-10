@@ -10,10 +10,13 @@ pub struct Error {
 }
 
 impl Error {
-    pub(crate) fn new(msg: String) -> Self {
+    pub(crate) fn new<S>(msg: S) -> Self
+    where
+        S: Into<String>,
+    {
         Self {
             original: None,
-            msg,
+            msg: msg.into(),
         }
     }
 }

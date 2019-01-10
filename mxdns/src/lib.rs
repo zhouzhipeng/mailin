@@ -93,10 +93,14 @@ impl MxDns {
     {
         // Convert the address into a query for each blocklist
         let ip = addr.into();
+        let ip = match to_ipv4(ip) {
+            Ok(i) => i,
+            Err(e) => return vec![Err(e)],
+        };
         let query_fqdns = self
             .blocklists
             .iter()
-            .map(|b| ip_to_query(ip, &b))
+            .map(|b| format_ipv4(&ip, &b))
             .collect::<Vec<String>>();
 
         // Spawn a task to make DNS queries to the bootstrap nameserver
@@ -166,7 +170,9 @@ impl MxDns {
     where
         A: Into<IpAddr>,
     {
-        let query = ip_to_query(ip.into(), "in-addr.arpa");
+        let ip = ip.into();
+        let ip = to_ipv4(ip)?;
+        let query = format_ipv4(&ip, "in-addr.arpa");
         let mut runtime = Runtime::new().unwrap();
         let (task, mut client) = connect_client(self.bootstrap);
         runtime.spawn(task);
@@ -281,13 +287,13 @@ fn format_ipv4(ip: &Ipv4Addr, postfix: &str) -> String {
     )
 }
 
-// Convert an ip address into a domain name query for use with rdns or blocklists
-fn ip_to_query(ip: IpAddr, postfix: &str) -> String {
-    if let IpAddr::V4(ipv4) = ip {
-        format_ipv4(&ipv4, postfix)
-    } else {
-        assert!(false, "Only ip v4 lookups supported");
-        String::default()
+// Convert an ip address into a Ipv4Addr
+fn to_ipv4(ip: IpAddr) -> Result<Ipv4Addr, Error> {
+    match ip {
+        IpAddr::V4(ipv4) => Ok(ipv4),
+        IpAddr::V6(ipv6) => ipv6
+            .to_ipv4()
+            .ok_or_else(|| Error::new("Cannot convert Ipv6 address to Ipv4 address")),
     }
 }
 
