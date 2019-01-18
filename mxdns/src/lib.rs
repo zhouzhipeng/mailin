@@ -91,6 +91,10 @@ impl MxDns {
     where
         A: Into<IpAddr>,
     {
+        if self.blocklists.is_empty() {
+            return vec![];
+        }
+
         // Convert the address into a query for each blocklist
         let ip = addr.into();
         let ip = match to_ipv4(ip) {
