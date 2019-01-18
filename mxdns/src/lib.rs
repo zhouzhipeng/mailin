@@ -162,8 +162,11 @@ impl MxDns {
         A: Into<IpAddr>,
     {
         let mut res = self.on_blocklists(addr);
-        if !res.is_empty() && res.iter().all(|r| r.is_err()) {
-            res.pop().unwrap()
+        if res.is_empty() {
+            Ok(false)
+        } else if res.iter().all(|r| r.is_err()) {
+            res.pop()
+                .unwrap_or_else(|| Err(Error::new("Failed to pop a non-empty error iterator")))
         } else {
             Ok(res.into_iter().any(|r| r.unwrap_or(false)))
         }
