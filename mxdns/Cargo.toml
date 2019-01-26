@@ -15,6 +15,7 @@ edition = "2018"
 trust-dns = "0.15"
 tokio = "0.1"
 resolv-conf = "0.6"
+log = "0.4"
 
 [dev-dependencies]
 matches = "0.1"

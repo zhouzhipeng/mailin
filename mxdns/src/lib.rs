@@ -25,6 +25,8 @@
 mod err;
 
 use crate::err::Error;
+use log::Level::Debug;
+use log::{debug, log_enabled};
 use resolv_conf;
 use std::fs::File;
 use std::io::Read;
@@ -134,6 +136,11 @@ impl MxDns {
             let res = runtime.block_on(fut).map_err(|err| err.into());
             ret.push(res);
         }
+        if log_enabled!(Debug) {
+            for i in 0..ret.len() {
+                debug!("{} is blocked by {} = {:?}", ip, self.blocklists[i], ret[i]);
+            }
+        }
         ret
     }
 
@@ -202,13 +209,19 @@ impl MxDns {
             None => return Ok(false),
             Some(s) => s,
         };
+        debug!("reverse lookup for {} = {}", ipaddr, fqdn);
         let (task, client) = connect_client(self.bootstrap);
         let mut runtime = Runtime::new().unwrap();
         runtime.spawn(task);
         let confirmed = lookup_ip(client, &fqdn);
-        runtime
-            .block_on(confirmed)
-            .map(|maybe_ip| maybe_ip.filter(|c| c == &ipaddr).is_some())
+        runtime.block_on(confirmed).map(|maybe_ip| {
+            maybe_ip
+                .filter(|c| {
+                    debug!("ipaddr = {}, forward confirmed = {} ", ipaddr, c);
+                    c == &ipaddr
+                })
+                .is_some()
+        })
     }
 }
 
@@ -397,6 +410,13 @@ mod tests {
     fn fcrdns_ok() {
         let mxdns = build_mx_dns();
         assert!(mxdns.fcrdns([88, 198, 127, 200]).unwrap());
+    }
+
+    #[cfg_attr(feature = "no-network-tests", ignore)]
+    #[test]
+    fn fcrdns_google_ok() {
+        let mxdns = build_mx_dns();
+        assert!(mxdns.fcrdns([209, 85, 167, 66]).unwrap());
     }
 
     #[cfg_attr(feature = "no-network-tests", ignore)]
