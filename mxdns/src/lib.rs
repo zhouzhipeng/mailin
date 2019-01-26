@@ -3,6 +3,9 @@
 //! Currently, DNS based blocklists and reverse DNS lookups are supported.
 //! The crate also supports forward confirmed reverse dns checks.
 //!
+//! Because blocklists are IP4 based, these utilities only support IP4
+//! addresses. IP6 addresses are converted to IP4 when possible.
+//!
 //! # Examples
 //! ```no_run
 //! use mxdns::MxDns;
@@ -205,6 +208,7 @@ impl MxDns {
         A: Into<IpAddr>,
     {
         let ipaddr = ip.into();
+        let ipaddr = to_ipv4(ipaddr)?;
         let fqdn = match self.reverse_dns(ipaddr.clone())? {
             None => return Ok(false),
             Some(s) => s,
