@@ -34,12 +34,17 @@ struct Handler {
 impl mailin_embedded::Handler for Handler {
     fn helo(&mut self, ip: IpAddr, _domain: &str) -> HeloResult {
         // Does the reverse DNS match the forward dns?
-        if !self.mxdns.fcrdns(ip).unwrap_or(true) {
-            return HeloResult::BadHelo;
-        } else if self.mxdns.is_blocked(ip).unwrap_or(false) {
-            return HeloResult::BlockedIp;
+        let rdns = self.mxdns.fcrdns(ip);
+        match rdns {
+            Ok(ref res) if !res.is_confirmed() => HeloResult::BadHelo,
+            _ => {
+                if self.mxdns.is_blocked(ip).unwrap_or(false) {
+                    HeloResult::BlockedIp
+                } else {
+                    HeloResult::Ok
+                }
+            }
         }
-        HeloResult::Ok
     }
 }
 

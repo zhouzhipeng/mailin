@@ -8,7 +8,7 @@
 //!
 //! # Examples
 //! ```no_run
-//! use mxdns::MxDns;
+//! use mxdns::{MxDns, FCrDNS};
 //!
 //! let blocklists = vec!["zen.spamhaus.org.","dnsbl-1.uceprotect.net."];
 //! let mxdns = MxDns::new(blocklists).unwrap();
@@ -22,7 +22,9 @@
 //! assert_eq!(rdns, "mail.alienscience.org.");
 //!
 //! // Check that the ip resolved from the name obtained by the reverse dns matches the ip
-//! assert!(mxdns.fcrdns([193, 25, 101, 5]).unwrap());
+//! if let Ok(FCrDNS::Confirmed(_domain)) = mxdns.fcrdns([193, 25, 101, 5]) {
+//!    // _domain is Confirmed
+//! }
 //! ```
 
 mod err;
@@ -49,6 +51,27 @@ const RESOLV_CONF: &str = "/etc/resolv.conf";
 pub struct MxDns {
     bootstrap: SocketAddr,
     blocklists: Vec<String>,
+}
+
+/// The result of a FCrDNS lookup
+#[derive(Debug)]
+pub enum FCrDNS {
+    /// Reverse lookup failed
+    NoReverse,
+    /// Reverse lookup was successful but could not be forward confirmed
+    UnConfirmed(String),
+    /// The reverse lookup was forward confirmed
+    Confirmed(String),
+}
+
+impl FCrDNS {
+    /// Is the result a confirmed reverse dns value?
+    pub fn is_confirmed(&self) -> bool {
+        match &self {
+            FCrDNS::Confirmed(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl MxDns {
@@ -183,6 +206,7 @@ impl MxDns {
     }
 
     /// Does a reverse DNS lookup on the given ip address
+    /// Returns Ok(None) if no reverse DNS entry exists.
     pub fn reverse_dns<A>(&self, ip: A) -> Result<Option<String>, Error>
     where
         A: Into<IpAddr>,
@@ -203,29 +227,35 @@ impl MxDns {
     /// Does a Forward Confirmed Reverse DNS check on the given ip address
     /// This checks that the reverse lookup on the ip address gives a domain
     /// name that will resolve to the original ip address.
-    pub fn fcrdns<A>(&self, ip: A) -> Result<bool, Error>
+    /// Returns the confirmed reverse DNS domain name.
+    pub fn fcrdns<A>(&self, ip: A) -> Result<FCrDNS, Error>
     where
         A: Into<IpAddr>,
     {
         let ipaddr = ip.into();
         let ipaddr = to_ipv4(ipaddr)?;
         let fqdn = match self.reverse_dns(ipaddr.clone())? {
-            None => return Ok(false),
+            None => return Ok(FCrDNS::NoReverse),
             Some(s) => s,
         };
         debug!("reverse lookup for {} = {}", ipaddr, fqdn);
         let (task, client) = connect_client(self.bootstrap);
         let mut runtime = Runtime::new().unwrap();
         runtime.spawn(task);
-        let confirmed = lookup_ip(client, &fqdn);
-        runtime.block_on(confirmed).map(|maybe_ip| {
+        let forward = lookup_ip(client, &fqdn);
+        let is_confirmed = runtime.block_on(forward).map(|maybe_ip| {
             maybe_ip
                 .filter(|c| {
                     debug!("ipaddr = {}, forward confirmed = {} ", ipaddr, c);
                     c == &ipaddr
                 })
                 .is_some()
-        })
+        });
+        match is_confirmed {
+            Ok(true) => Ok(FCrDNS::Confirmed(fqdn)),
+            Ok(false) => Ok(FCrDNS::UnConfirmed(fqdn)),
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -413,22 +443,37 @@ mod tests {
     #[test]
     fn fcrdns_ok() {
         let mxdns = build_mx_dns();
-        assert!(mxdns.fcrdns([88, 198, 127, 200]).unwrap());
+        let res = mxdns.fcrdns([88, 198, 127, 200]);
+        assert!(
+            matches!(res, Ok(FCrDNS::Confirmed(_))),
+            "Valid mail server failed fcrdns: {:?}",
+            res
+        );
     }
 
     #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn fcrdns_google_ok() {
         let mxdns = build_mx_dns();
-        assert!(mxdns.fcrdns([209, 85, 167, 66]).unwrap());
+        let res = mxdns.fcrdns([209, 85, 167, 66]);
+        assert!(
+            matches!(res, Ok(FCrDNS::Confirmed(_))),
+            "Valid google server failed fcrdns: {:?}",
+            res
+        );
     }
 
     #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn fcrdns_fail() {
         let mxdns = build_mx_dns();
+        let res = mxdns.fcrdns([127, 0, 0, 2]);
         // 127.0.0.2 -> localhost -> 127.0.0.1
-        assert!(!mxdns.fcrdns([127, 0, 0, 2]).unwrap());
+        assert!(
+            matches!(res, Ok(FCrDNS::NoReverse) | Ok(FCrDNS::UnConfirmed(_))),
+            "Known bad forward confirm failed: {:?}",
+            res
+        );
     }
 
 }
