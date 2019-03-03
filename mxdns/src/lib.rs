@@ -35,7 +35,7 @@ use log::{debug, log_enabled};
 use resolv_conf;
 use std::fs::File;
 use std::io::Read;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread::Runtime;
@@ -317,17 +317,12 @@ fn lookup_ptr(
 }
 
 // Connect to the given dns server asynchronously
-fn connect_client<A>(
-    dns_addr: A,
+fn connect_client(
+    sock_addr: SocketAddr,
 ) -> (
     impl Future<Item = (), Error = ()>,
     BasicClientHandle<DnsMultiplexerSerialResponse>,
-)
-where
-    A: ToSocketAddrs,
-{
-    let mut addrs = dns_addr.to_socket_addrs().unwrap();
-    let sock_addr = addrs.next().unwrap();
+) {
     let (stream, handle) = UdpClientStream::new(sock_addr);
     ClientFuture::new(stream, handle, None)
 }
@@ -389,7 +384,8 @@ mod tests {
     #[test]
     fn blocklist_addrs() {
         let mxdns = build_mx_dns();
-        let (bootstrap_task, bootstrap_client) = connect_client("8.8.8.8:53");
+        let dns_server: SocketAddr = "8.8.8.8:53".parse().unwrap();
+        let (bootstrap_task, bootstrap_client) = connect_client(dns_server);
         let mut runtime = Runtime::new().unwrap();
         runtime.spawn(bootstrap_task);
         let addrs = mxdns.blocklist_addrs(&mut runtime, bootstrap_client);
