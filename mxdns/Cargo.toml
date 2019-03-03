@@ -1,6 +1,6 @@
 [package]
 name = "mxdns"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["alienscience <saul@alienscience.org.uk>"]
 description = "DNS utilities for SMTP servers"
 homepage = "https://gitlab.com/alienscience/mailin"
@@ -12,7 +12,7 @@ license = "MIT OR Apache-2.0"
 edition = "2018"
 
 [dependencies]
-trust-dns = "0.15"
+trust-dns = "=0.15.0"
 tokio = "0.1"
 resolv-conf = "0.6"
 log = "0.4"
