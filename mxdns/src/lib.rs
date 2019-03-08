@@ -40,7 +40,7 @@ use std::str::FromStr;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread::Runtime;
 use trust_dns::client::{BasicClientHandle, ClientFuture, ClientHandle};
-use trust_dns::proto::xfer::DnsMultiplexerSerialResponse;
+use trust_dns::proto::udp::UdpResponse;
 use trust_dns::rr::{DNSClass, Name, RData, RecordType};
 use trust_dns::udp::UdpClientStream;
 
@@ -174,7 +174,7 @@ impl MxDns {
     fn blocklist_addrs(
         &self,
         runtime: &mut Runtime,
-        client: BasicClientHandle<DnsMultiplexerSerialResponse>,
+        client: BasicClientHandle<UdpResponse>,
     ) -> Vec<Option<SocketAddr>> {
         let blocklist_addr_futures = self.blocklists.iter().map(|b| {
             lookup_ns(client.clone(), b)
@@ -261,7 +261,7 @@ impl MxDns {
 
 // Lookup the nameserver that handles the given fqdn
 fn lookup_ns(
-    mut client: BasicClientHandle<DnsMultiplexerSerialResponse>,
+    mut client: BasicClientHandle<UdpResponse>,
     fqdn: &str,
 ) -> impl Future<Item = Option<String>, Error = Error> {
     let name = Name::from_str(fqdn).unwrap(); // TODO: remove unwrap
@@ -282,7 +282,7 @@ fn lookup_ns(
 
 // Lookup the IP address for a given fqdn
 fn lookup_ip(
-    mut client: BasicClientHandle<DnsMultiplexerSerialResponse>,
+    mut client: BasicClientHandle<UdpResponse>,
     fqdn: &str,
 ) -> impl Future<Item = Option<IpAddr>, Error = Error> {
     let name = Name::from_str(fqdn).unwrap(); // TODO: remove unwrap
@@ -300,7 +300,7 @@ fn lookup_ip(
 
 // Reverse lookup using the given inaddr-arpa fqdn
 fn lookup_ptr(
-    client: &mut BasicClientHandle<DnsMultiplexerSerialResponse>,
+    client: &mut BasicClientHandle<UdpResponse>,
     fqdn: &str,
 ) -> impl Future<Item = Option<Name>, Error = Error> {
     let name = Name::from_str(fqdn).unwrap(); // TODO: remove unwrap
@@ -321,10 +321,10 @@ fn connect_client(
     sock_addr: SocketAddr,
 ) -> (
     impl Future<Item = (), Error = ()>,
-    BasicClientHandle<DnsMultiplexerSerialResponse>,
+    BasicClientHandle<UdpResponse>,
 ) {
-    let (stream, handle) = UdpClientStream::new(sock_addr);
-    ClientFuture::new(stream, handle, None)
+    let stream = UdpClientStream::new(sock_addr);
+    ClientFuture::connect(stream)
 }
 
 // Format an IPv4 address for a blocklist or reverse dns lookup
