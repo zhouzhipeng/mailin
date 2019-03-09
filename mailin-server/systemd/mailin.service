@@ -2,6 +2,10 @@
 Description=Mailin SMTP server
 
 [Service]
-ExecStart=/home/gitlab-runner/deploy/mailin/mailin --socket-activation --log /home/gitlab-runner/deploy/mailin/logs
+ExecStart=/home/gitlab-runner/deploy/mailin/mailin \
+    --socket-activation \
+    --log /home/gitlab-runner/deploy/mailin/logs \
+    --blocklist zen.spamhaus.org \
+    --blocklist dnsbl-1.uceprotect.net
 User=mailin
 Group=mailin
