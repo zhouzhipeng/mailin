@@ -55,6 +55,9 @@ impl RunningServer {
         if ssl_acceptor.is_some() {
             session_builder.enable_start_tls();
         }
+        for auth in &config.auth {
+            session_builder.enable_auth(auth.clone());
+        }
         let listen = if let Some(listener) = config.tcp_listener {
             listener
         } else {
