@@ -463,9 +463,13 @@ mod tests {
     #[test]
     fn rset_with_auth() {
         let mut session = new_auth_session(true);
-        session.process(b"ehlo some.domain");
-        session.process(b"auth plain eGVzdAB0ZXN0ADEyMzQ=");
-        session.process(b"mail from:<ship@sea.com>");
+        start_tls(&mut session);
+        let res = session.process(b"ehlo some.domain");
+        assert_eq!(res.code, 250);
+        let res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=");
+        assert_eq!(res.code, 235);
+        let res = session.process(b"mail from:<ship@sea.com>");
+        assert_eq!(res.code, 250);
         let res = session.process(b"rset");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
