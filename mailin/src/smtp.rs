@@ -2,7 +2,7 @@ use std::net::IpAddr;
 use std::str;
 
 use crate::fsm::StateMachine;
-use crate::{Action, Handler, Response};
+use crate::{Action, AuthMechanism, Handler, Response};
 use either::{Left, Right};
 use lazy_static::lazy_static;
 use ternop::ternary;
@@ -78,7 +78,7 @@ pub struct Session<H: Handler> {
     handler: H,
     fsm: StateMachine,
     start_tls_extension: bool,
-    auth_extension: bool,
+    auth_mechanisms: Vec<AuthMechanism>,
 }
 
 #[derive(Clone)]
@@ -86,7 +86,7 @@ pub struct Session<H: Handler> {
 ///
 /// # Examples
 /// ```
-/// # use mailin::{Session, SessionBuilder, Handler, Action};
+/// # use mailin::{Session, SessionBuilder, Handler, Action, AuthMechanism};
 ///
 /// # use std::net::{IpAddr, Ipv4Addr};
 /// # struct EmptyHandler{};
@@ -96,14 +96,14 @@ pub struct Session<H: Handler> {
 /// // Create a session builder that holds the configuration
 /// let mut builder = SessionBuilder::new("server_name");
 /// builder.enable_start_tls()
-///        .enable_auth();
+///        .enable_auth(AuthMechanism::Plain);
 /// // Then when a client connects
 /// let mut session = builder.build(addr, handler);
 ///
 pub struct SessionBuilder {
     name: String,
     start_tls_extension: bool,
-    auth_extension: bool,
+    auth_mechanisms: Vec<AuthMechanism>,
 }
 
 impl SessionBuilder {
@@ -111,29 +111,27 @@ impl SessionBuilder {
         Self {
             name: name.into(),
             start_tls_extension: false,
-            auth_extension: false,
+            auth_mechanisms: Vec::with_capacity(4),
         }
     }
 
     pub fn enable_start_tls(&mut self) -> &mut Self {
-        let ret = self;
-        ret.start_tls_extension = true;
-        ret
+        self.start_tls_extension = true;
+        self
     }
 
-    pub fn enable_auth(&mut self) -> &mut Self {
-        let ret = self;
-        ret.auth_extension = true;
-        ret
+    pub fn enable_auth(&mut self, auth: AuthMechanism) -> &mut Self {
+        self.auth_mechanisms.push(auth);
+        self
     }
 
     pub fn build<H: Handler>(&self, remote: IpAddr, handler: H) -> Session<H> {
         Session {
             name: self.name.clone(),
             handler,
-            fsm: StateMachine::new(remote, self.auth_extension, self.start_tls_extension),
+            fsm: StateMachine::new(remote, &self.auth_mechanisms, self.start_tls_extension),
             start_tls_extension: self.start_tls_extension,
-            auth_extension: self.auth_extension,
+            auth_mechanisms: self.auth_mechanisms.clone(),
         }
     }
 }
@@ -200,8 +198,10 @@ impl<H: Handler> Session<H> {
         let mut extensions = vec!["8BITMIME"];
         if self.start_tls_extension {
             extensions.push("STARTTLS");
-        } else if self.auth_extension {
-            extensions.push("AUTH PLAIN");
+        } else {
+            for auth in &self.auth_mechanisms {
+                extensions.push(auth.extension());
+            }
         }
         Response::dynamic(250, format!("{} offers extensions:", self.name), extensions)
     }
@@ -368,16 +368,28 @@ mod tests {
         }
     }
 
-    fn new_auth_session() -> Session<AuthHandler> {
+    fn new_auth_session(with_start_tls: bool) -> Session<AuthHandler> {
         let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        SessionBuilder::new("some.domain")
-            .enable_auth()
-            .build(addr, AuthHandler {})
+        let mut builder = SessionBuilder::new("some.domain");
+        builder.enable_auth(AuthMechanism::Plain);
+        if with_start_tls {
+            builder.enable_start_tls();
+        }
+        builder.build(addr, AuthHandler {})
+    }
+
+    fn start_tls(session: &mut Session<AuthHandler>) {
+        let res = session.process(b"ehlo a.domain");
+        assert_eq!(res.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+        let res = session.process(b"starttls");
+        assert_eq!(res.code, 220);
+        session.tls_active();
     }
 
     #[test]
     fn noauth_denied() {
-        let mut session = new_auth_session();
+        let mut session = new_auth_session(true);
         session.process(b"ehlo a.domain");
         let res = session.process(b"mail from:<ship@sea.com>");
         assert_eq!(res.code, 503);
@@ -386,7 +398,8 @@ mod tests {
 
     #[test]
     fn auth_plain_param() {
-        let mut session = new_auth_session();
+        let mut session = new_auth_session(true);
+        start_tls(&mut session);
         let mut res = session.process(b"ehlo a.domain");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
@@ -397,7 +410,8 @@ mod tests {
 
     #[test]
     fn bad_auth_plain_param() {
-        let mut session = new_auth_session();
+        let mut session = new_auth_session(true);
+        start_tls(&mut session);
         let mut res = session.process(b"ehlo a.domain");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
@@ -408,25 +422,37 @@ mod tests {
 
     #[test]
     fn auth_plain_challenge() {
-        let mut session = new_auth_session();
-        let mut res = session.process(b"ehlo a.domain");
+        let mut session = new_auth_session(true);
+        start_tls(&mut session);
+        let res = session.process(b"ehlo a.domain");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
-        res = session.process(b"auth plain");
+        let res = session.process(b"auth plain");
         assert_eq!(res.code, 334);
         match res.message {
             Message::Fixed("") => {}
             _ => assert!(false, "Server did not send empty challenge"),
         };
         assert_state!(session.fsm.current_state(), SmtpState::Auth);
-        res = session.process(b"dGVzdAB0ZXN0ADEyMzQ=");
+        let res = session.process(b"dGVzdAB0ZXN0ADEyMzQ=");
         assert_eq!(res.code, 235);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
 
     #[test]
+    fn auth_without_tls() {
+        let mut session = new_auth_session(true);
+        let mut res = session.process(b"ehlo a.domain");
+        assert_eq!(res.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+        res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=");
+        assert_eq!(res.code, 503);
+    }
+
+    #[test]
     fn bad_auth_plain_challenge() {
-        let mut session = new_auth_session();
+        let mut session = new_auth_session(true);
+        start_tls(&mut session);
         session.process(b"ehlo a.domain");
         session.process(b"auth plain");
         let res = session.process(b"eGVzdAB0ZXN0ADEyMzQ=");
@@ -436,7 +462,7 @@ mod tests {
 
     #[test]
     fn rset_with_auth() {
-        let mut session = new_auth_session();
+        let mut session = new_auth_session(true);
         session.process(b"ehlo some.domain");
         session.process(b"auth plain eGVzdAB0ZXN0ADEyMzQ=");
         session.process(b"mail from:<ship@sea.com>");

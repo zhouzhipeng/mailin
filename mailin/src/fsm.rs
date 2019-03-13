@@ -174,7 +174,7 @@ fn handle_ehlo(
                 domain: domain.to_owned(),
             })
         }),
-        _ => next_state(current, res, || {
+        AuthState::RequiresAuth | AuthState::Authenticated => next_state(current, res, || {
             Box::new(HelloAuth {
                 domain: domain.to_owned(),
             })
@@ -287,20 +287,14 @@ impl State for HelloAuth {
         match cmd {
             Cmd::StartTls => (START_TLS.clone(), Some(Box::new(Idle {}))),
             Cmd::AuthPlain {
-                authorization_id,
-                authentication_id,
-                password,
-            } => {
-                let res = authenticate(
-                    fsm,
-                    handler,
-                    &authorization_id,
-                    &authentication_id,
-                    &password,
-                );
+                ref authorization_id,
+                ref authentication_id,
+                ref password,
+            } if fsm.allow_auth_plain() => {
+                let res = authenticate(fsm, handler, authorization_id, authentication_id, password);
                 transform_state(self, res, |s| Box::new(Hello { domain: s.domain }))
             }
-            Cmd::AuthPlainEmpty => {
+            Cmd::AuthPlainEmpty if fsm.allow_auth_plain() => {
                 let domain = self.domain.clone();
                 (
                     Response::fixed(334, ""),
@@ -514,22 +508,30 @@ pub(crate) struct StateMachine {
     auth: AuthState,
     tls: TlsState,
     smtp: Option<Box<State>>,
+    auth_plain: bool,
 }
 
 impl StateMachine {
-    pub fn new(ip: IpAddr, require_auth: bool, allow_start_tls: bool) -> Self {
+    pub fn new(ip: IpAddr, auth_mechanisms: &[AuthMechanism], allow_start_tls: bool) -> Self {
         let auth = ternary!(
-            require_auth,
-            AuthState::RequiresAuth,
-            AuthState::Unavailable
+            auth_mechanisms.is_empty(),
+            AuthState::Unavailable,
+            AuthState::RequiresAuth
         );
         let tls = ternary!(allow_start_tls, TlsState::Inactive, TlsState::Unavailable);
-        Self {
+        let mut ret = Self {
             ip,
             auth,
             tls,
             smtp: Some(Box::new(Idle {})),
+            auth_plain: false,
+        };
+        for auth_mechanism in auth_mechanisms {
+            match auth_mechanism {
+                AuthMechanism::Plain => ret.auth_plain = true,
+            }
         }
+        ret
     }
 
     // Respond and change state with the given command
@@ -556,5 +558,9 @@ impl StateMachine {
     pub fn current_state(&self) -> SmtpState {
         let id = self.smtp.as_ref().map(|s| s.id());
         id.unwrap_or(SmtpState::Invalid)
+    }
+
+    fn allow_auth_plain(&self) -> bool {
+        self.auth_plain && self.tls == TlsState::Active
     }
 }
