@@ -132,7 +132,7 @@ impl MxDns {
         let query_fqdns = self
             .blocklists
             .iter()
-            .map(|b| format_ipv4(&ip, &b))
+            .map(|b| format_ipv4(ip, &b))
             .collect::<Vec<String>>();
 
         // Spawn a task to make DNS queries to the bootstrap nameserver
@@ -159,12 +159,12 @@ impl MxDns {
 
         let mut ret = Vec::with_capacity(is_blocked_futures.len());
         for fut in is_blocked_futures {
-            let res = runtime.block_on(fut).map_err(|err| err.into());
+            let res = runtime.block_on(fut);
             ret.push(res);
         }
         if log_enabled!(Debug) {
-            for i in 0..ret.len() {
-                debug!("{} is blocked by {} = {:?}", ip, self.blocklists[i], ret[i]);
+            for i in ret.iter().enumerate() {
+                debug!("{} is blocked by {} = {:?}", ip, self.blocklists[i.0], i.1);
             }
         }
         ret
@@ -213,15 +213,12 @@ impl MxDns {
     {
         let ip = ip.into();
         let ip = to_ipv4(ip)?;
-        let query = format_ipv4(&ip, "in-addr.arpa");
+        let query = format_ipv4(ip, "in-addr.arpa");
         let mut runtime = Runtime::new().unwrap();
         let (task, mut client) = connect_client(self.bootstrap);
         runtime.spawn(task);
         let rdns = lookup_ptr(&mut client, &query);
-        runtime
-            .block_on(rdns)
-            .map(|o| o.map(|name| name.to_utf8()))
-            .map_err(|err| err.into())
+        runtime.block_on(rdns).map(|o| o.map(|name| name.to_utf8()))
     }
 
     /// Does a Forward Confirmed Reverse DNS check on the given ip address
@@ -234,7 +231,7 @@ impl MxDns {
     {
         let ipaddr = ip.into();
         let ipaddr = to_ipv4(ipaddr)?;
-        let fqdn = match self.reverse_dns(ipaddr.clone())? {
+        let fqdn = match self.reverse_dns(ipaddr)? {
             None => return Ok(FCrDNS::NoReverse),
             Some(s) => s,
         };
@@ -291,7 +288,7 @@ fn lookup_ip(
         .map(|response| {
             let answer = response.answers();
             answer.first().and_then(|record| match record.rdata() {
-                RData::A(ip) => Some(IpAddr::V4(ip.clone())),
+                RData::A(ip) => Some(IpAddr::V4(*ip)),
                 _ => None,
             })
         })
@@ -328,7 +325,7 @@ fn connect_client(
 }
 
 // Format an IPv4 address for a blocklist or reverse dns lookup
-fn format_ipv4(ip: &Ipv4Addr, postfix: &str) -> String {
+fn format_ipv4(ip: Ipv4Addr, postfix: &str) -> String {
     let octets = ip.octets();
     format!(
         "{}.{}.{}.{}.{}",
