@@ -485,15 +485,21 @@ mod tests {
         let domain = "some.domain";
         let from = "ship@sea.com";
         let to = vec!["fish@sea.com".to_owned(), "seaweed@sea.com".to_owned()];
-        // TODO: test multiple lines of data
-        let data = b"Hello 8bit world \x40\x7f\r\n";
+        let data = vec![
+            b"Hello 8bit world \x40\x7f\r\n" as &[u8],
+            b"Hello again\r\n" as &[u8],
+        ];
+        let mut expected_data = Vec::with_capacity(2);
+        for line in data.clone() {
+            expected_data.extend(line);
+        }
         let mut handler = TestHandler {
             ip: ip.clone(),
             domain: domain.to_owned(),
             from: from.to_owned(),
             to: to.clone(),
             is8bit: true,
-            expected_data: data.to_vec(),
+            expected_data: expected_data,
             helo_called: false,
             mail_called: false,
             rcpt_called: false,
@@ -511,7 +517,9 @@ mod tests {
             session.process(&rcpt0);
             session.process(&rcpt1);
             session.process(b"data\r\n");
-            session.process(data);
+            for line in data {
+                session.process(line);
+            }
             session.process(b".\r\n");
         }
         assert_eq!(handler.helo_called, true);
