@@ -163,7 +163,7 @@ impl<H: Handler> Session<H> {
     /// # let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     /// # let handler = EmptyHandler{};
     /// # let mut session = SessionBuilder::new("name").build(addr, handler);
-    /// let response = session.process(b"HELO example.com");
+    /// let response = session.process(b"HELO example.com\r\n");
     ///
     /// // Check the response
     /// assert_eq!(response.is_error, false);
@@ -242,10 +242,10 @@ mod tests {
     #[test]
     fn helo_ehlo() {
         let mut session = new_session();
-        let res1 = session.process(b"helo a.domain");
+        let res1 = session.process(b"helo a.domain\r\n");
         assert_eq!(res1.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
-        let res2 = session.process(b"ehlo b.domain");
+        let res2 = session.process(b"ehlo b.domain\r\n");
         assert_eq!(res2.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
@@ -253,8 +253,8 @@ mod tests {
     #[test]
     fn mail_from() {
         let mut session = new_session();
-        session.process(b"helo a.domain");
-        let res = session.process(b"mail from:<ship@sea.com>");
+        session.process(b"helo a.domain\r\n");
+        let res = session.process(b"mail from:<ship@sea.com>\r\n");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::Mail);
     }
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn domain_badchars() {
         let mut session = new_session();
-        let res = session.process(b"helo world\x40\xff");
+        let res = session.process(b"helo world\x40\xff\r\n");
         assert_eq!(res.code, 500);
         assert_state!(session.fsm.current_state(), SmtpState::Idle);
     }
@@ -270,11 +270,11 @@ mod tests {
     #[test]
     fn rcpt_to() {
         let mut session = new_session();
-        session.process(b"helo a.domain");
-        session.process(b"mail from:<ship@sea.com>");
-        let res1 = session.process(b"rcpt to:<fish@sea.com>");
+        session.process(b"helo a.domain\r\n");
+        session.process(b"mail from:<ship@sea.com>\r\n");
+        let res1 = session.process(b"rcpt to:<fish@sea.com>\r\n");
         assert_eq!(res1.code, 250);
-        let res2 = session.process(b"rcpt to:<kraken@sea.com>");
+        let res2 = session.process(b"rcpt to:<kraken@sea.com>\r\n");
         assert_eq!(res2.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::Rcpt);
     }
@@ -282,14 +282,14 @@ mod tests {
     #[test]
     fn data() {
         let mut session = new_session();
-        session.process(b"helo a.domain");
-        session.process(b"mail from:<ship@sea.com>");
-        session.process(b"rcpt to:<fish@sea.com>");
-        let res1 = session.process(b"data");
+        session.process(b"helo a.domain\r\n");
+        session.process(b"mail from:<ship@sea.com>\r\n");
+        session.process(b"rcpt to:<fish@sea.com>\r\n");
+        let res1 = session.process(b"data\r\n");
         assert_eq!(res1.code, 354);
-        let res2 = session.process(b"Hello World");
+        let res2 = session.process(b"Hello World\r\n");
         assert_eq!(res2.action, Action::NoReply);
-        let res3 = session.process(b".");
+        let res3 = session.process(b".\r\n");
         assert_eq!(res3.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
@@ -297,15 +297,15 @@ mod tests {
     #[test]
     fn data_8bit() {
         let mut session = new_session();
-        session.process(b"helo a.domain");
-        session.process(b"mail from:<ship@sea.com> body=8bitmime");
-        session.process(b"rcpt to:<fish@sea.com>");
-        let res1 = session.process(b"data");
+        session.process(b"helo a.domain\r\n");
+        session.process(b"mail from:<ship@sea.com> body=8bitmime\r\n");
+        session.process(b"rcpt to:<fish@sea.com>\r\n");
+        let res1 = session.process(b"data\r\n");
         assert_eq!(res1.code, 354);
         // Send illegal utf-8 but valid 8bit mime
-        let res2 = session.process(b"Hello 8bit world \x40\x7f");
+        let res2 = session.process(b"Hello 8bit world \x40\x7f\r\n");
         assert_eq!(res2.action, Action::NoReply);
-        let res3 = session.process(b".");
+        let res3 = session.process(b".\r\n");
         assert_eq!(res3.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
@@ -313,9 +313,9 @@ mod tests {
     #[test]
     fn rset_hello() {
         let mut session = new_session();
-        session.process(b"helo some.domain");
-        session.process(b"mail from:<ship@sea.com>");
-        let res = session.process(b"rset");
+        session.process(b"helo some.domain\r\n");
+        session.process(b"mail from:<ship@sea.com>\r\n");
+        let res = session.process(b"rset\r\n");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn rset_idle() {
         let mut session = new_session();
-        let res = session.process(b"rset");
+        let res = session.process(b"rset\r\n");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::Idle);
     }
@@ -331,9 +331,9 @@ mod tests {
     #[test]
     fn quit() {
         let mut session = new_session();
-        session.process(b"helo a.domain");
-        session.process(b"mail from:<ship@sea.com>");
-        let res = session.process(b"quit");
+        session.process(b"helo a.domain\r\n");
+        session.process(b"mail from:<ship@sea.com>\r\n");
+        let res = session.process(b"quit\r\n");
         assert_eq!(res.code, 221);
         assert_eq!(res.action, Action::Close);
         assert_state!(session.fsm.current_state(), SmtpState::Invalid);
@@ -342,12 +342,12 @@ mod tests {
     #[test]
     fn vrfy() {
         let mut session = new_session();
-        session.process(b"helo a.domain");
-        let res1 = session.process(b"vrfy kraken");
+        session.process(b"helo a.domain\r\n");
+        let res1 = session.process(b"vrfy kraken\r\n");
         assert_eq!(res1.code, 252);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
-        session.process(b"mail from:<ship@sea.com>");
-        let res2 = session.process(b"vrfy boat");
+        session.process(b"mail from:<ship@sea.com>\r\n");
+        let res2 = session.process(b"vrfy boat\r\n");
         assert_eq!(res2.code, 503);
         assert_state!(session.fsm.current_state(), SmtpState::Mail);
     }
@@ -379,10 +379,10 @@ mod tests {
     }
 
     fn start_tls(session: &mut Session<AuthHandler>) {
-        let res = session.process(b"ehlo a.domain");
+        let res = session.process(b"ehlo a.domain\r\n");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
-        let res = session.process(b"starttls");
+        let res = session.process(b"starttls\r\n");
         assert_eq!(res.code, 220);
         session.tls_active();
     }
@@ -390,8 +390,8 @@ mod tests {
     #[test]
     fn noauth_denied() {
         let mut session = new_auth_session(true);
-        session.process(b"ehlo a.domain");
-        let res = session.process(b"mail from:<ship@sea.com>");
+        session.process(b"ehlo a.domain\r\n");
+        let res = session.process(b"mail from:<ship@sea.com>\r\n");
         assert_eq!(res.code, 503);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }
@@ -400,10 +400,10 @@ mod tests {
     fn auth_plain_param() {
         let mut session = new_auth_session(true);
         start_tls(&mut session);
-        let mut res = session.process(b"ehlo a.domain");
+        let mut res = session.process(b"ehlo a.domain\r\n");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
-        res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=");
+        res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=\r\n");
         assert_eq!(res.code, 235);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
@@ -412,10 +412,10 @@ mod tests {
     fn bad_auth_plain_param() {
         let mut session = new_auth_session(true);
         start_tls(&mut session);
-        let mut res = session.process(b"ehlo a.domain");
+        let mut res = session.process(b"ehlo a.domain\r\n");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
-        res = session.process(b"auth plain eGVzdAB0ZXN0ADEyMzQ=");
+        res = session.process(b"auth plain eGVzdAB0ZXN0ADEyMzQ=\r\n");
         assert_eq!(res.code, 535);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }
@@ -424,17 +424,17 @@ mod tests {
     fn auth_plain_challenge() {
         let mut session = new_auth_session(true);
         start_tls(&mut session);
-        let res = session.process(b"ehlo a.domain");
+        let res = session.process(b"ehlo a.domain\r\n");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
-        let res = session.process(b"auth plain");
+        let res = session.process(b"auth plain\r\n");
         assert_eq!(res.code, 334);
         match res.message {
             Message::Fixed("") => {}
             _ => assert!(false, "Server did not send empty challenge"),
         };
         assert_state!(session.fsm.current_state(), SmtpState::Auth);
-        let res = session.process(b"dGVzdAB0ZXN0ADEyMzQ=");
+        let res = session.process(b"dGVzdAB0ZXN0ADEyMzQ=\r\n");
         assert_eq!(res.code, 235);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
@@ -442,10 +442,10 @@ mod tests {
     #[test]
     fn auth_without_tls() {
         let mut session = new_auth_session(true);
-        let mut res = session.process(b"ehlo a.domain");
+        let mut res = session.process(b"ehlo a.domain\r\n");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
-        res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=");
+        res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=\r\n");
         assert_eq!(res.code, 503);
     }
 
@@ -453,9 +453,9 @@ mod tests {
     fn bad_auth_plain_challenge() {
         let mut session = new_auth_session(true);
         start_tls(&mut session);
-        session.process(b"ehlo a.domain");
-        session.process(b"auth plain");
-        let res = session.process(b"eGVzdAB0ZXN0ADEyMzQ=");
+        session.process(b"ehlo a.domain\r\n");
+        session.process(b"auth plain\r\n");
+        let res = session.process(b"eGVzdAB0ZXN0ADEyMzQ=\r\n");
         assert_eq!(res.code, 535);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }
@@ -464,13 +464,13 @@ mod tests {
     fn rset_with_auth() {
         let mut session = new_auth_session(true);
         start_tls(&mut session);
-        let res = session.process(b"ehlo some.domain");
+        let res = session.process(b"ehlo some.domain\r\n");
         assert_eq!(res.code, 250);
-        let res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=");
+        let res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=\r\n");
         assert_eq!(res.code, 235);
-        let res = session.process(b"mail from:<ship@sea.com>");
+        let res = session.process(b"mail from:<ship@sea.com>\r\n");
         assert_eq!(res.code, 250);
-        let res = session.process(b"rset");
+        let res = session.process(b"rset\r\n");
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }

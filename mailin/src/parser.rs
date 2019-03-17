@@ -20,11 +20,18 @@ pub fn parse(line: &[u8]) -> Result<Cmd, Response> {
         })
 }
 
+// Parse an authentication response from the client
+pub fn parse_auth_response(line: &[u8]) -> Result<&[u8], Response> {
+    auth_response(CompleteByteSlice(line))
+        .map(|r| r.1)
+        .map_err(|_| SYNTAX_ERROR.clone())
+}
+
 named!(command(CompleteByteSlice) -> Cmd,
        terminated!(
            alt!(helo | ehlo | mail | rcpt | data | rset | quit |
                 vrfy | noop | starttls | auth),
-           eof!()
+           tag!("\r\n")
        )
 );
 
@@ -70,7 +77,7 @@ named!(body_eq_8bit(CompleteByteSlice) -> bool,
 );
 
 named!(is8bitmime(CompleteByteSlice) -> bool,
-       alt!(value!(false, eof!()) | body_eq_8bit)
+       alt!(body_eq_8bit | value!(false))
 );
 
 named!(mail(CompleteByteSlice) -> Cmd,
@@ -152,14 +159,22 @@ named!(auth_initial(CompleteByteSlice) -> &[u8],
        )
 );
 
+named!(auth_response(CompleteByteSlice) -> &[u8],
+       do_parse!(
+           response: take_while!(is_base64) >>
+               tag!("\r\n") >>
+               (*response)
+       )
+);
+
 named!(empty(CompleteByteSlice) -> &[u8],
-       value!(b"" as &[u8], eof!())
+       value!(b"" as &[u8])
 );
 
 named!(auth_plain(CompleteByteSlice) -> Cmd,
        do_parse!(
            tag_no_case!("plain") >>
-               initial: alt!(empty | auth_initial) >>
+               initial: alt!(auth_initial | empty) >>
                (sasl_plain_cmd(initial))
        )
 );
@@ -229,7 +244,7 @@ mod tests {
 
     #[test]
     fn auth_initial() {
-        let res = parse(b"auth plain dGVzdAB0ZXN0ADEyMzQ=");
+        let res = parse(b"auth plain dGVzdAB0ZXN0ADEyMzQ=\r\n");
         match res {
             Ok(Cmd::AuthPlain {
                 authorization_id,
@@ -246,7 +261,7 @@ mod tests {
 
     #[test]
     fn auth_empty() {
-        let res = parse(b"auth plain");
+        let res = parse(b"auth plain\r\n");
         match res {
             Ok(Cmd::AuthPlainEmpty) => {}
             _ => assert!(

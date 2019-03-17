@@ -1,4 +1,4 @@
-use crate::parser::{decode_sasl_plain, parse};
+use crate::parser::{decode_sasl_plain, parse, parse_auth_response};
 use crate::smtp::{
     Cmd, BAD_SEQUENCE_COMMANDS, EMPTY_RESPONSE, GOODBYE, INVALID_STATE, START_DATA, START_TLS,
     VERIFY_RESPONSE,
@@ -355,7 +355,10 @@ impl State for Auth {
     }
 
     fn process_line<'a>(self: &mut Self, line: &'a [u8]) -> Either<Cmd<'a>, Response> {
-        Left(Cmd::AuthResponse { response: line })
+        trace!("> {}", String::from_utf8_lossy(line));
+        parse_auth_response(line)
+            .map(|r| Left(Cmd::AuthResponse { response: r }))
+            .unwrap_or_else(Right)
     }
 }
 
@@ -487,7 +490,7 @@ impl State for Data {
     }
 
     fn process_line<'a>(self: &mut Self, line: &'a [u8]) -> Either<Cmd<'a>, Response> {
-        if line == b"." {
+        if line == b".\r\n" {
             trace!("> _data_");
             Left(Cmd::DataEnd)
         } else {

@@ -1,5 +1,5 @@
 use crate::err::Error;
-use crate::utils::{slurp, trim};
+use crate::utils::slurp;
 use crate::{Server, SslConfig};
 use bufstream::BufStream;
 use lazy_static::lazy_static;
@@ -154,7 +154,6 @@ where
         if num_bytes == 0 {
             break;
         }
-        trim(&mut line);
         let res = session.process(&line);
         match res.action {
             Action::Reply => {

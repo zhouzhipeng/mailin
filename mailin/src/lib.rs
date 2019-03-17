@@ -17,7 +17,7 @@
 //! // Create a SMTP session when a new client connects
 //! let session = SessionBuilder::new("mailserver_name").build(client_ip, handler);
 //!
-//! // Read a line from the client and strip the trailing /r/n
+//! // Read a line from the client
 //! let line = read_line(tcp_connection);
 //! // Send the line to the session
 //! let res = session.process(line);
@@ -485,14 +485,21 @@ mod tests {
         let domain = "some.domain";
         let from = "ship@sea.com";
         let to = vec!["fish@sea.com".to_owned(), "seaweed@sea.com".to_owned()];
-        let data = b"Hello 8bit world \x40\x7f";
+        let data = vec![
+            b"Hello 8bit world \x40\x7f\r\n" as &[u8],
+            b"Hello again\r\n" as &[u8],
+        ];
+        let mut expected_data = Vec::with_capacity(2);
+        for line in data.clone() {
+            expected_data.extend(line);
+        }
         let mut handler = TestHandler {
             ip: ip.clone(),
             domain: domain.to_owned(),
             from: from.to_owned(),
             to: to.clone(),
             is8bit: true,
-            expected_data: data.to_vec(),
+            expected_data: expected_data,
             helo_called: false,
             mail_called: false,
             rcpt_called: false,
@@ -501,17 +508,19 @@ mod tests {
         {
             let mut session =
                 smtp::SessionBuilder::new("server.domain").build(ip.clone(), &mut handler);
-            let helo = format!("helo {}", domain).into_bytes();
+            let helo = format!("helo {}\r\n", domain).into_bytes();
             session.process(&helo);
-            let mail = format!("mail from:<{}> body=8bitmime", from).into_bytes();
+            let mail = format!("mail from:<{}> body=8bitmime\r\n", from).into_bytes();
             session.process(&mail);
-            let rcpt0 = format!("rcpt to:<{}>", &to[0]).into_bytes();
-            let rcpt1 = format!("rcpt to:<{}>", &to[1]).into_bytes();
+            let rcpt0 = format!("rcpt to:<{}>\r\n", &to[0]).into_bytes();
+            let rcpt1 = format!("rcpt to:<{}>\r\n", &to[1]).into_bytes();
             session.process(&rcpt0);
             session.process(&rcpt1);
-            session.process(b"data");
-            session.process(data);
-            session.process(b".");
+            session.process(b"data\r\n");
+            for line in data {
+                session.process(line);
+            }
+            session.process(b".\r\n");
         }
         assert_eq!(handler.helo_called, true);
         assert_eq!(handler.mail_called, true);
