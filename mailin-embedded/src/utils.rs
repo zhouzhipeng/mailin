@@ -4,15 +4,6 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-pub fn trim(line: &mut Vec<u8>) {
-    if let Some(&b'\n') = line.last() {
-        line.pop();
-    }
-    if let Some(&b'\r') = line.last() {
-        line.pop();
-    }
-}
-
 pub fn slurp<P>(path: P) -> Result<Vec<u8>, Error>
 where
     P: AsRef<Path> + Display,
