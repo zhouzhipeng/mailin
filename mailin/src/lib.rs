@@ -499,29 +499,27 @@ mod tests {
             from: from.to_owned(),
             to: to.clone(),
             is8bit: true,
-            expected_data: expected_data,
+            expected_data,
             helo_called: false,
             mail_called: false,
             rcpt_called: false,
             data_called: false,
         };
-        {
-            let mut session =
-                smtp::SessionBuilder::new("server.domain").build(ip.clone(), &mut handler);
-            let helo = format!("helo {}\r\n", domain).into_bytes();
-            session.process(&helo);
-            let mail = format!("mail from:<{}> body=8bitmime\r\n", from).into_bytes();
-            session.process(&mail);
-            let rcpt0 = format!("rcpt to:<{}>\r\n", &to[0]).into_bytes();
-            let rcpt1 = format!("rcpt to:<{}>\r\n", &to[1]).into_bytes();
-            session.process(&rcpt0);
-            session.process(&rcpt1);
-            session.process(b"data\r\n");
-            for line in data {
-                session.process(line);
-            }
-            session.process(b".\r\n");
+        let mut session =
+            smtp::SessionBuilder::new("server.domain").build(ip.clone(), &mut handler);
+        let helo = format!("helo {}\r\n", domain).into_bytes();
+        session.process(&helo);
+        let mail = format!("mail from:<{}> body=8bitmime\r\n", from).into_bytes();
+        session.process(&mail);
+        let rcpt0 = format!("rcpt to:<{}>\r\n", &to[0]).into_bytes();
+        let rcpt1 = format!("rcpt to:<{}>\r\n", &to[1]).into_bytes();
+        session.process(&rcpt0);
+        session.process(&rcpt1);
+        session.process(b"data\r\n");
+        for line in data {
+            session.process(line);
         }
+        session.process(b".\r\n");
         assert_eq!(handler.helo_called, true);
         assert_eq!(handler.mail_called, true);
         assert_eq!(handler.rcpt_called, true);
