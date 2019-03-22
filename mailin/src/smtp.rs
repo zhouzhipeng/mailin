@@ -150,7 +150,6 @@ impl<H: Handler> Session<H> {
 
     /// Process a line sent by the client.
     ///
-    /// The parser assumes that the line does not contain the `\r\n` line ending.
     /// Returns a response that should be written back to the client.
     ///
     /// # Examples
