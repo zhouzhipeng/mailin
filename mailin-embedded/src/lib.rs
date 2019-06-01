@@ -20,6 +20,9 @@
 //! server.serve_forever();
 //! ```
 
+#![forbid(unsafe_code)]
+#![forbid(missing_docs)]
+
 mod err;
 mod running;
 mod utils;

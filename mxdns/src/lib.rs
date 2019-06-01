@@ -27,6 +27,9 @@
 //! }
 //! ```
 
+#![forbid(unsafe_code)]
+#![forbid(missing_docs)]
+
 mod err;
 
 use crate::err::Error;
