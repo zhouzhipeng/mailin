@@ -120,6 +120,7 @@ pub trait Handler {
 #[derive(Debug, Clone)]
 /// Supported authentication mechanisms
 pub enum AuthMechanism {
+    /// Plain user/password over TLS
     Plain,
 }
 
@@ -137,9 +138,12 @@ impl AuthMechanism {
 /// Response contains a code and message to be sent back to the client
 #[derive(Clone, Debug)]
 pub struct Response {
+    /// The three digit response code
     pub code: u16,
     message: Message,
+    /// Is the response an error response?
     pub is_error: bool,
+    /// The action to take after sending the response to the client
     pub action: Action,
     ehlo_ok: bool, // This is an EHLO OK response
 }

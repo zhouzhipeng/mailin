@@ -42,7 +42,7 @@ where
 pub struct RunningServer {
     address: SocketAddr,
     stop: Arc<AtomicBool>,
-    pub join: JoinHandle<()>,
+    pub(crate) join: JoinHandle<()>,
 }
 
 impl RunningServer {

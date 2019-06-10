@@ -107,6 +107,7 @@ pub struct SessionBuilder {
 }
 
 impl SessionBuilder {
+    /// Create a new session for the given mailserver name
     pub fn new<S: Into<String>>(name: S) -> Self {
         Self {
             name: name.into(),
@@ -115,16 +116,19 @@ impl SessionBuilder {
         }
     }
 
+    /// Enable support for StartTls
     pub fn enable_start_tls(&mut self) -> &mut Self {
         self.start_tls_extension = true;
         self
     }
 
+    /// Enable support for authentication
     pub fn enable_auth(&mut self, auth: AuthMechanism) -> &mut Self {
         self.auth_mechanisms.push(auth);
         self
     }
 
+    /// Build a new session to handle a connection from the given ip address
     pub fn build<H: Handler>(&self, remote: IpAddr, handler: H) -> Session<H> {
         Session {
             name: self.name.clone(),
