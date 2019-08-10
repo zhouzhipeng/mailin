@@ -124,7 +124,8 @@ impl RunningServer {
         H: Handler + Clone + Send + 'static,
     {
         let pool = ThreadPool::with_name("handler".to_string(), server_state.num_threads);
-        info!("{} SMTP started", name);
+        let localaddr = server_state.listener.local_addr()?;
+        info!("{} SMTP started on {}", name, localaddr);
         for conn in server_state.listener.incoming() {
             if stop_flag.load(Ordering::Relaxed) {
                 break;
