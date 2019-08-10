@@ -418,16 +418,6 @@ mod tests {
 
     #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
-    fn pbl_blocked() {
-        let mxdns = build_mx_dns();
-        // Check an address known to be blocked by the spamhaus PBL
-        let addr = "217.255.183.36".parse::<IpAddr>().unwrap();
-        let blocked = mxdns.on_blocklists(addr);
-        assert_eq!(blocked[0].as_ref().unwrap(), &true);
-    }
-
-    #[cfg_attr(feature = "no-network-tests", ignore)]
-    #[test]
     fn reverse_lookup() {
         let mxdns = build_mx_dns();
         let addr = "88.198.127.200".parse::<IpAddr>().unwrap();
