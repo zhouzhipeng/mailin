@@ -47,6 +47,7 @@ deploy-master:
   script:
     - sudo systemctl stop mailin
     - cp target/release/mailin-server $DEPLOY_TARGET
+    - sudo systemctl start mailin
   environment:
     name: coward
   only:
