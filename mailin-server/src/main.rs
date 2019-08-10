@@ -1,19 +1,21 @@
 use chrono::Local;
-use failure::{bail, format_err, Error};
+use failure::{format_err, Error};
 use getopts::Options;
-use listenfd::ListenFd;
 use mailin_embedded::{HeloResult, Server, SslConfig};
 use mxdns::MxDns;
+use nix::unistd;
+use privdrop::PrivDrop;
 use simplelog::{
     CombinedLogger, Config, Level, LevelFilter, SharedLogger, SimpleLogger, TermLogger, WriteLogger,
 };
 use std::env;
 use std::fs::File;
-use std::net::IpAddr;
+use std::net::{IpAddr, TcpListener};
 use std::path::Path;
 
 const DOMAIN: &str = "localhost";
 const DEFAULT_ADDRESS: &str = "127.0.0.1:8025";
+const DEFAULT_USER: &str = "mailin";
 
 // Command line option names
 const OPT_HELP: &str = "help";
@@ -23,8 +25,9 @@ const OPT_SERVER: &str = "server";
 const OPT_SSL_CERT: &str = "ssl-cert";
 const OPT_SSL_KEY: &str = "ssl-key";
 const OPT_SSL_CHAIN: &str = "ssl-chain";
-const OPT_SOCKET_ACTIVATION: &str = "socket-activation";
 const OPT_BLOCKLIST: &str = "blocklist";
+const OPT_USER: &str = "user";
+const OPT_GROUP: &str = "group";
 
 #[derive(Clone)]
 struct Handler {
@@ -96,7 +99,6 @@ fn main() -> Result<(), Error> {
     opts.optopt("a", OPT_ADDRESS, "the address to listen on", "ADDRESS");
     opts.optopt("l", OPT_LOG, "the directory to write logs to", "LOG_DIR");
     opts.optopt("s", OPT_SERVER, "the name of the mailserver", "SERVER");
-    opts.optflag("", OPT_SOCKET_ACTIVATION, "use socket activation");
     opts.optmulti("", OPT_BLOCKLIST, "use blocklist", "BLOCKLIST");
     opts.optopt("", OPT_SSL_CERT, "ssl certificate", "PEM_FILE");
     opts.optopt("", OPT_SSL_KEY, "ssl certificate key", "PEM_FILE");
@@ -106,6 +108,8 @@ fn main() -> Result<(), Error> {
         "ssl chain of trust for the certificate",
         "PEM_FILE",
     );
+    opts.optopt("", OPT_USER, "user to run as", "USER");
+    opts.optopt("", OPT_GROUP, "group to run as", "GROUP");
     let matches = opts
         .parse(&args[1..])
         .map_err(|err| format_err!("Error parsing command line: {}", err))?;
@@ -113,8 +117,6 @@ fn main() -> Result<(), Error> {
         print_usage(&args[0], &opts);
         return Ok(());
     }
-    let log_directory = matches.opt_str(OPT_LOG);
-    setup_logger(log_directory)?;
     let ssl_config = match (matches.opt_str(OPT_SSL_CERT), matches.opt_str(OPT_SSL_KEY)) {
         (Some(cert_path), Some(key_path)) => SslConfig::SelfSigned {
             cert_path,
@@ -130,18 +132,28 @@ fn main() -> Result<(), Error> {
     let handler = Handler { mxdns };
     let mut server = Server::new(handler);
     server.with_name(domain).with_ssl(ssl_config);
-    if matches.opt_present(OPT_SOCKET_ACTIVATION) {
-        let mut listenfd = ListenFd::from_env();
-        if let Some(listener) = listenfd.take_tcp_listener(0)? {
-            server.with_tcp_listener(listener);
-        } else {
-            bail!("No tcp socket found for socket activation");
+
+    // Bind TCP listener
+    let addr = matches
+        .opt_str(OPT_ADDRESS)
+        .unwrap_or_else(|| DEFAULT_ADDRESS.to_owned());
+    let listener = TcpListener::bind(addr)?;
+    server.with_tcp_listener(listener);
+
+    // Drop privileges if root
+    if unistd::geteuid().is_root() {
+        let user = matches
+            .opt_str(OPT_USER)
+            .unwrap_or_else(|| DEFAULT_USER.to_owned());
+        let mut privdrop = PrivDrop::default().user(user);
+        if let Some(group) = matches.opt_str(OPT_GROUP) {
+            privdrop = privdrop.group(group);
         }
-    } else {
-        let addr = matches
-            .opt_str(OPT_ADDRESS)
-            .unwrap_or_else(|| DEFAULT_ADDRESS.to_owned());
-        server.with_addr(addr).map_err(|e| format_err!("{}", e))?;
+        privdrop.apply()?;
     }
+
+    let log_directory = matches.opt_str(OPT_LOG);
+    setup_logger(log_directory)?;
+
     server.serve_forever().map_err(|e| format_err!("{}", e))
 }
