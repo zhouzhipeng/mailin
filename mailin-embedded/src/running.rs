@@ -1,14 +1,11 @@
 use crate::err::Error;
-use crate::utils::slurp;
-use crate::{Server, SslConfig};
+use crate::Server;
 use bufstream::BufStream;
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace};
 use mailin::{Action, Handler, Response, Session, SessionBuilder};
 use openssl;
-use openssl::pkey::PKey;
-use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslMethod, SslStream};
-use openssl::x509::X509;
+use openssl::ssl::{SslAcceptor, SslStream};
 use std::io::{BufRead, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,7 +39,7 @@ where
 pub struct RunningServer {
     address: SocketAddr,
     stop: Arc<AtomicBool>,
-    pub(crate) join: JoinHandle<()>,
+    pub(crate) join_handle: JoinHandle<()>,
 }
 
 impl RunningServer {
@@ -50,9 +47,8 @@ impl RunningServer {
     where
         H: Handler + Clone + Send + 'static,
     {
-        let ssl_acceptor = setup_ssl(config.ssl_config)?;
         let mut session_builder = SessionBuilder::new(config.name.clone());
-        if ssl_acceptor.is_some() {
+        if config.ssl_acceptor.is_some() {
             session_builder.enable_start_tls();
         }
         for auth in &config.auth {
@@ -72,14 +68,14 @@ impl RunningServer {
             listener: listen,
             handler: config.handler,
             session_builder,
-            ssl_acceptor: ssl_acceptor.map(Arc::new),
+            ssl_acceptor: config.ssl_acceptor.map(Arc::new),
             num_threads: config.num_threads,
         };
         let stop_flag = Arc::new(AtomicBool::new(false));
         Ok(Self {
             address: local_addr,
             stop: stop_flag.clone(),
-            join: Self::background_run(config.name, &local_addr, stop_flag, server_state)?,
+            join_handle: Self::background_run(config.name, &local_addr, stop_flag, server_state)?,
         })
     }
 
@@ -90,7 +86,7 @@ impl RunningServer {
         if let Err(_conn) = TcpStream::connect(&self.address) {
             error!("Stopping mailin-embedded but server is not actively listening");
         }
-        if self.join.join().is_err() {
+        if self.join_handle.join().is_err() {
             error!("Unknown error stopping mailin-embedded");
         }
     }
@@ -240,46 +236,6 @@ fn handle_connection<H: Handler>(
     if let Err(err) = start_session(&session_builder, remote, bufstream, ssl_acceptor, handler) {
         error!("({}) {}", remote, err);
     }
-}
-
-fn ssl_builder(cert_path: String, key_path: String) -> Result<SslAcceptorBuilder, Error> {
-    let mut builder = SslAcceptor::mozilla_modern(SslMethod::tls())?;
-    let cert_pem = slurp(cert_path)?;
-    let cert = X509::from_pem(&cert_pem)?;
-    let key_pem = slurp(key_path)?;
-    let pkey = PKey::private_key_from_pem(&key_pem)?;
-    builder.set_private_key(&pkey)?;
-    builder.set_certificate(&cert)?;
-    builder.check_private_key()?;
-    Ok(builder)
-}
-
-fn setup_ssl(ssl_config: SslConfig) -> Result<Option<SslAcceptor>, Error> {
-    let builder = match ssl_config {
-        SslConfig::Trusted {
-            cert_path,
-            key_path,
-            chain_path,
-        } => {
-            let mut builder = ssl_builder(cert_path, key_path)?;
-            let chain_pem = slurp(chain_path)?;
-            let chain = X509::stack_from_pem(&chain_pem)?;
-            for cert in chain {
-                builder.add_extra_chain_cert(cert.as_ref().to_owned())?;
-            }
-            Some(builder)
-        }
-        SslConfig::SelfSigned {
-            cert_path,
-            key_path,
-        } => {
-            let builder = ssl_builder(cert_path, key_path)?;
-            Some(builder)
-        }
-        _ => None,
-    };
-    let acceptor = builder.map(|b| b.build());
-    Ok(acceptor)
 }
 
 #[cfg(test)]

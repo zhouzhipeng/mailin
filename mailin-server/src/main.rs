@@ -131,7 +131,10 @@ fn main() -> Result<(), Error> {
     let mxdns = MxDns::new(blocklists).map_err(|e| format_err!("{}", e))?;
     let handler = Handler { mxdns };
     let mut server = Server::new(handler);
-    server.with_name(domain).with_ssl(ssl_config);
+    server
+        .with_name(domain)
+        .with_ssl(ssl_config)
+        .map_err(|e| format_err!("{}", e))?;
 
     // Bind TCP listener
     let addr = matches

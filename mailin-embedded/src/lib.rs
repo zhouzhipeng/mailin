@@ -5,6 +5,7 @@
 //! # Examples
 //! ```no_run
 //! use mailin_embedded::{Server, SslConfig, Handler};
+//! # use mailin_embedded::err::Error;
 //!
 //! #[derive(Clone)]
 //! struct MyHandler {}
@@ -14,24 +15,29 @@
 //! let mut server = Server::new(handler);
 //!
 //! server.with_name("example.com")
-//!    .with_ssl(SslConfig::None)
-//!    .with_addr("127.0.0.1:25")
-//!    .unwrap();
+//!    .with_ssl(SslConfig::None)?
+//!    .with_addr("127.0.0.1:25")?;
 //! server.serve_forever();
+//! # Ok::<(), Error>(())
 //! ```
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-mod err;
+/// Custom error type for mailin_embedded
+pub mod err;
+
 mod running;
+mod ssl;
 mod utils;
 
 use crate::err::Error;
 pub use crate::running::RunningServer;
+use crate::ssl::setup_ssl;
 pub use mailin::{
     AuthMechanism, AuthResult, DataResult, Handler, HeloResult, MailResult, RcptResult,
 };
+use openssl::ssl::SslAcceptor;
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 
 /// `SslConfig` is used to configure the STARTTLS configuration of the server
@@ -63,7 +69,7 @@ where
 {
     handler: H,
     name: String,
-    ssl_config: SslConfig,
+    ssl_acceptor: Option<SslAcceptor>,
     num_threads: usize,
     auth: Vec<AuthMechanism>,
     tcp_listener: Option<TcpListener>,
@@ -79,7 +85,7 @@ where
         Self {
             handler,
             name: "localhost".to_owned(),
-            ssl_config: SslConfig::None,
+            ssl_acceptor: None,
             num_threads: 4,
             auth: Vec::with_capacity(4),
             tcp_listener: None,
@@ -97,9 +103,9 @@ where
     }
 
     /// Set the SSL configuration of the server
-    pub fn with_ssl(&mut self, ssl_config: SslConfig) -> &mut Self {
-        self.ssl_config = ssl_config;
-        self
+    pub fn with_ssl(&mut self, ssl_config: SslConfig) -> Result<&mut Self, Error> {
+        self.ssl_acceptor = setup_ssl(ssl_config)?;
+        Ok(self)
     }
 
     /// Set the size of the threadpool which is equal to the maximum number of
@@ -150,7 +156,7 @@ where
     pub fn serve_forever(self) -> Result<(), Error> {
         let running = RunningServer::serve(self)?;
         running
-            .join
+            .join_handle
             .join()
             .map_err(|_| Error::new("Error joining server"))
     }
