@@ -222,7 +222,7 @@ impl Response {
     }
 
     /// Write the response to the given writer
-    pub fn write_to(&self, out: &mut Write) -> io::Result<()> {
+    pub fn write_to(&self, out: &mut dyn Write) -> io::Result<()> {
         match self.message {
             Message::Dynamic(ref head, ref tail) => {
                 if tail.is_empty() {
@@ -343,7 +343,7 @@ impl From<RcptResult> for Response {
 /// `DataResult` is the result of an smtp DATA command
 pub enum DataResult {
     /// Message accepted, write bytes to Writer
-    Ok(Box<Write>),
+    Ok(Box<dyn Write>),
     /// Internal server error
     InternalError,
     /// Transaction failed

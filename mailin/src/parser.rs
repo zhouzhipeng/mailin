@@ -229,7 +229,7 @@ pub(crate) fn decode_sasl_plain(param: &[u8]) -> Credentials {
     }
 }
 
-fn next_string(it: &mut Iterator<Item = &[u8]>) -> String {
+fn next_string(it: &mut dyn Iterator<Item = &[u8]>) -> String {
     it.next()
         .map(|s| str::from_utf8(s).unwrap_or_default())
         .unwrap_or_default()

@@ -174,7 +174,7 @@ where
     Error::bail("Unexpected Eof")
 }
 
-fn write_response(mut writer: &mut Write, res: &Response) -> Result<(), Error> {
+fn write_response(mut writer: &mut dyn Write, res: &Response) -> Result<(), Error> {
     res.write_to(&mut writer)?;
     writer
         .flush()
