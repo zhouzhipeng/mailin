@@ -8,9 +8,9 @@ edition = "2018"
 mailin-embedded = { path="../mailin-embedded" }
 mxdns = { path="../mxdns" }
 log = "0.4"
-simplelog = "0.5"
+simplelog = "0.7"
 chrono = "0.4"
 getopts = "0.2"
 failure = "0.1"
 privdrop = "0.3"
-nix = "0.14"
+nix = "0.15"
