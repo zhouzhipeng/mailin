@@ -131,11 +131,13 @@ where
     /// Returns an error if the given socket addresses are not valid.
     /// ```
     /// # use mailin_embedded::{Server, Handler};
+    /// # use mailin_embedded::err::Error;
     /// # #[derive(Clone)]
     /// # struct EmptyHandler {}
     /// # impl Handler for EmptyHandler {}
     /// # let mut server = Server::new(EmptyHandler {});
-    /// server.with_addr("127.0.0.1:25").unwrap();
+    /// server.with_addr("127.0.0.1:25")?;
+    /// # Ok::<(), Error>(())
     /// ```
     pub fn with_addr<A: ToSocketAddrs>(&mut self, addr: A) -> Result<&mut Self, Error> {
         for addr in addr
