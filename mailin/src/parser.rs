@@ -1,7 +1,10 @@
 use base64;
-use nom;
-use nom::types::CompleteByteSlice;
-use nom::*;
+use nom::branch::alt;
+use nom::bytes::complete::{is_not, tag, tag_no_case, take_while1};
+use nom::character::is_alphanumeric;
+use nom::combinator::{map, map_res, value};
+use nom::sequence::{pair, preceded, separated_pair, terminated};
+use nom::IResult;
 
 use crate::smtp::{Cmd, Credentials, MISSING_PARAMETER, SYNTAX_ERROR};
 use crate::Response;
@@ -11,187 +14,141 @@ use std::str;
 
 // Parse a line from the client
 pub fn parse(line: &[u8]) -> Result<Cmd, Response> {
-    command(CompleteByteSlice(line))
-        .map(|r| r.1)
-        .map_err(|e| match e {
-            nom::Err::Incomplete(_) => MISSING_PARAMETER.clone(),
-            nom::Err::Error(_) => SYNTAX_ERROR.clone(),
-            nom::Err::Failure(_) => SYNTAX_ERROR.clone(),
-        })
+    command(line).map(|r| r.1).map_err(|e| match e {
+        nom::Err::Incomplete(_) => MISSING_PARAMETER.clone(),
+        nom::Err::Error(_) => SYNTAX_ERROR.clone(),
+        nom::Err::Failure(_) => SYNTAX_ERROR.clone(),
+    })
 }
 
 // Parse an authentication response from the client
 pub fn parse_auth_response(line: &[u8]) -> Result<&[u8], Response> {
-    auth_response(CompleteByteSlice(line))
+    auth_response(line)
         .map(|r| r.1)
         .map_err(|_| SYNTAX_ERROR.clone())
 }
 
-named!(command(CompleteByteSlice) -> Cmd,
-       terminated!(
-           alt!(helo | ehlo | mail | rcpt | data | rset | quit |
-                vrfy | noop | starttls | auth),
-           tag!("\r\n")
-       )
-);
+fn command(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    terminated(
+        alt((
+            helo, ehlo, mail, rcpt, data, rset, quit, vrfy, noop, starttls, auth,
+        )),
+        tag(b"\r\n"),
+    )(buf)
+}
 
-named!(hello_domain(CompleteByteSlice) -> &str,
-       map_res!(is_not!(" \t\r\n"), from_utf8)
-);
+fn hello_domain(buf: &[u8]) -> IResult<&[u8], &str> {
+    map_res(is_not(b" \t\r\n" as &[u8]), str::from_utf8)(buf)
+}
 
-named!(helo(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("helo") >>
-               space >>
-               domain: hello_domain >>
-               (Cmd::Helo{domain})
-       )
-);
+fn helo(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    let parse_domain = preceded(cmd(b"helo"), hello_domain);
+    map(parse_domain, |domain| Cmd::Helo { domain })(buf)
+}
 
-named!(ehlo(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("ehlo") >>
-               space >>
-               domain: hello_domain >>
-               (Cmd::Ehlo{domain})
-       )
-);
+fn ehlo(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    let parse_domain = preceded(cmd(b"ehlo"), hello_domain);
+    map(parse_domain, |domain| Cmd::Ehlo { domain })(buf)
+}
 
-//TODO: check grammar in RFC
-named!(mail_path(CompleteByteSlice) -> &str,
-       map_res!(is_not!(" <>\t\r\n"), from_utf8)
-);
+fn mail_path(buf: &[u8]) -> IResult<&[u8], &str> {
+    map_res(is_not(b" <>\t\r\n" as &[u8]), str::from_utf8)(buf)
+}
 
-named!(take_all(CompleteByteSlice) -> &str,
-       map_res!(is_not!("\r\n"), from_utf8)
-);
+fn take_all(buf: &[u8]) -> IResult<&[u8], &str> {
+    map_res(is_not(b"\r\n" as &[u8]), str::from_utf8)(buf)
+}
 
-named!(body_eq_8bit(CompleteByteSlice) -> bool,
-       do_parse!(
-           space >>
-           tag_no_case!("body=") >>
-           is8bit: alt!(value!(true, tag_no_case!("8bitmime")) |
-                        value!(false, tag_no_case!("7bit"))) >>
-           (is8bit)
-       )
-);
+fn body_eq_8bit(buf: &[u8]) -> IResult<&[u8], bool> {
+    let preamble = pair(space, tag_no_case(b"body="));
+    let is8bit = alt((
+        value(true, tag_no_case(b"8bitmime")),
+        value(false, tag_no_case(b"7bit")),
+    ));
+    preceded(preamble, is8bit)(buf)
+}
 
-named!(is8bitmime(CompleteByteSlice) -> bool,
-       alt!(body_eq_8bit | value!(false))
-);
+fn is8bitmime(buf: &[u8]) -> IResult<&[u8], bool> {
+    body_eq_8bit(buf).or_else(|_| Ok((buf, false)))
+}
 
-named!(mail(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("mail") >>
-               space >>
-               tag_no_case!("from:<") >>
-               path: mail_path >>
-               tag!(">") >>
-               is8bit: is8bitmime >>
-               (Cmd::Mail{reverse_path: path, is8bit})
-       )
-);
+fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    let preamble = pair(cmd(b"mail"), tag_no_case(b"from:<"));
+    let mail_path_parser = preceded(preamble, mail_path);
+    let parser = separated_pair(mail_path_parser, tag(b">"), is8bitmime);
+    map(parser, |r| Cmd::Mail {
+        reverse_path: r.0,
+        is8bit: r.1,
+    })(buf)
+}
 
-named!(rcpt(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("rcpt") >>
-               space >>
-               tag_no_case!("to:<") >>
-               path: mail_path >>
-               tag!(">") >>
-               (Cmd::Rcpt{forward_path: path})
-       )
-);
+fn rcpt(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    let preamble = pair(cmd(b"rcpt"), tag_no_case(b"to:<"));
+    let mail_path_parser = preceded(preamble, mail_path);
+    let parser = terminated(mail_path_parser, tag(b">"));
+    map(parser, |path| Cmd::Rcpt { forward_path: path })(buf)
+}
 
-named!(data(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("data") >>
-               (Cmd::Data)
-       )
-);
+fn data(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    value(Cmd::Data, tag_no_case(b"data"))(buf)
+}
 
-named!(rset(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("rset") >>
-               (Cmd::Rset)
-       )
-);
+fn rset(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    value(Cmd::Rset, tag_no_case(b"rset"))(buf)
+}
 
-named!(quit(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("quit") >>
-               (Cmd::Quit)
-       )
-);
+fn quit(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    value(Cmd::Quit, tag_no_case(b"quit"))(buf)
+}
 
-named!(vrfy(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("vrfy") >>
-               space >>
-               take_all >>
-               (Cmd::Vrfy)
-       )
-);
+fn vrfy(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    let preamble = preceded(cmd(b"vrfy"), take_all);
+    value(Cmd::Vrfy, preamble)(buf)
+}
 
-named!(noop(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("noop") >>
-               (Cmd::Noop)
-       )
-);
+fn noop(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    value(Cmd::Noop, tag_no_case(b"noop"))(buf)
+}
 
-named!(starttls(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("starttls") >>
-               (Cmd::StartTls)
-       )
-);
+fn starttls(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    value(Cmd::StartTls, tag_no_case(b"starttls"))(buf)
+}
 
 fn is_base64(chr: u8) -> bool {
     is_alphanumeric(chr) || (chr == b'+') || (chr == b'/' || chr == b'=')
 }
 
-named!(auth_initial(CompleteByteSlice) -> &[u8],
-       do_parse!(
-           space >>
-               initial: take_while!(is_base64) >>
-               (*initial)
-       )
-);
+fn auth_initial(buf: &[u8]) -> IResult<&[u8], &[u8]> {
+    preceded(space, take_while1(is_base64))(buf)
+}
 
-named!(auth_response(CompleteByteSlice) -> &[u8],
-       do_parse!(
-           response: take_while!(is_base64) >>
-               tag!("\r\n") >>
-               (*response)
-       )
-);
+fn auth_response(buf: &[u8]) -> IResult<&[u8], &[u8]> {
+    terminated(take_while1(is_base64), tag("\r\n"))(buf)
+}
 
-named!(empty(CompleteByteSlice) -> &[u8],
-       value!(b"" as &[u8])
-);
+fn empty(buf: &[u8]) -> IResult<&[u8], &[u8]> {
+    Ok((buf, b"" as &[u8]))
+}
 
-named!(auth_plain(CompleteByteSlice) -> Cmd,
-       do_parse!(
-           tag_no_case!("plain") >>
-               initial: alt!(auth_initial | empty) >>
-               (sasl_plain_cmd(initial))
-       )
-);
+fn auth_plain(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    let parser = preceded(tag_no_case(b"plain"), alt((auth_initial, empty)));
+    map(parser, |initial| sasl_plain_cmd(initial))(buf)
+}
 
-named!(auth(CompleteByteSlice) -> Cmd,
-       do_parse!(
-          tag_no_case!("auth") >>
-               space >>
-               cmd: auth_plain >>
-               (cmd)
-       )
-);
+fn auth(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    preceded(cmd(b"auth"), auth_plain)(buf)
+}
 
 //---- Helper functions ---------------------------------------------------------
 
-fn from_utf8(i: CompleteByteSlice) -> Result<&str, str::Utf8Error> {
-    str::from_utf8(*i)
+// Return a parser to match the given command
+fn cmd(cmd_tag: &[u8]) -> impl Fn(&[u8]) -> IResult<&[u8], (&[u8], &[u8])> + '_ {
+    move |buf: &[u8]| pair(tag_no_case(cmd_tag), space)(buf)
+}
+
+// Match one or more spaces
+fn space(buf: &[u8]) -> IResult<&[u8], &[u8]> {
+    take_while1(|b| b == b' ')(buf)
 }
 
 fn sasl_plain_cmd(param: &[u8]) -> Cmd {
@@ -229,7 +186,7 @@ pub(crate) fn decode_sasl_plain(param: &[u8]) -> Credentials {
     }
 }
 
-fn next_string(it: &mut Iterator<Item = &[u8]>) -> String {
+fn next_string(it: &mut dyn Iterator<Item = &[u8]>) -> String {
     it.next()
         .map(|s| str::from_utf8(s).unwrap_or_default())
         .unwrap_or_default()

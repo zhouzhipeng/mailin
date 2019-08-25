@@ -42,10 +42,12 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread::Runtime;
+use tokio_udp;
 use trust_dns::client::{BasicClientHandle, ClientFuture, ClientHandle};
-use trust_dns::proto::udp::UdpResponse;
 use trust_dns::rr::{DNSClass, Name, RData, RecordType};
 use trust_dns::udp::UdpClientStream;
+
+type UdpResponse = trust_dns::proto::udp::UdpResponse<tokio_udp::UdpSocket>;
 
 const RESOLV_CONF: &str = "/etc/resolv.conf";
 

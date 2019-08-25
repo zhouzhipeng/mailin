@@ -6,7 +6,8 @@ use mxdns::MxDns;
 use nix::unistd;
 use privdrop::PrivDrop;
 use simplelog::{
-    CombinedLogger, Config, Level, LevelFilter, SharedLogger, SimpleLogger, TermLogger, WriteLogger,
+    CombinedLogger, Config, LevelFilter, SharedLogger, SimpleLogger, TermLogger, TerminalMode,
+    WriteLogger,
 };
 use std::env;
 use std::fs::File;
@@ -53,13 +54,13 @@ impl mailin_embedded::Handler for Handler {
 
 fn setup_logger(log_dir: Option<String>) -> Result<(), Error> {
     let log_level = LevelFilter::Info;
-    // Try to create a terminal logger, if this fails use a simple logger
-    // to stderr/stdout
-    let term_logger = TermLogger::new(log_level, Config::default());
-    let quiet_logger: Box<SharedLogger> = match term_logger {
+    // Try to create a terminal logger, if this fails use a simple logger to stdout
+    let term_logger = TermLogger::new(log_level, Config::default(), TerminalMode::Stdout);
+    let quiet_logger: Box<dyn SharedLogger> = match term_logger {
         Some(tlog) => tlog,
         None => SimpleLogger::new(log_level, Config::default()),
     };
+    // Create a trace logger that writes SMTP interaction to file
     if let Some(dir) = log_dir {
         let log_path = Path::new(&dir);
         let datetime = Local::now().format("%Y%m%d%H%M%S").to_string();
@@ -68,17 +69,7 @@ fn setup_logger(log_dir: Option<String>) -> Result<(), Error> {
         let file = File::create(&filepath)?;
         CombinedLogger::init(vec![
             quiet_logger,
-            WriteLogger::new(
-                LevelFilter::Trace,
-                Config {
-                    time: Some(Level::Error),
-                    level: Some(Level::Error),
-                    target: None,
-                    location: None,
-                    time_format: None,
-                },
-                file,
-            ),
+            WriteLogger::new(LevelFilter::Trace, Config::default(), file),
         ])
         .map_err(|err| format_err!("Cannot initialize logger: {}", err))
     } else {

@@ -30,6 +30,7 @@ lazy_static! {
 //------ Types -----------------------------------------------------------------
 
 // Smtp commands sent by the client
+#[derive(Clone)]
 pub enum Cmd<'a> {
     Ehlo {
         domain: &'a str,
