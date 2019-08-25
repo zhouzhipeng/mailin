@@ -45,6 +45,7 @@ deploy-master:
   dependencies:
     - release-build
   script:
+    - rm $DEPLOY_TARGET
     - cp target/release/mailin-server $DEPLOY_TARGET
     - sudo systemctl restart mailin
   environment:
