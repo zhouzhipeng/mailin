@@ -6,4 +6,4 @@
 Release mxdns.
 EOUSE
 
-cargo release --tag-prefix mxdns- --no-dev-version patch
+cargo release --tag-prefix mxdns- --no-dev-version $1

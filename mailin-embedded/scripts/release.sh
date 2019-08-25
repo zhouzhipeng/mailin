@@ -6,4 +6,4 @@
 Release mailin-embedded.
 EOUSE
 
-cargo release --tag-prefix mailin-embedded- --no-dev-version patch
+cargo release --tag-prefix mailin-embedded- --no-dev-version $1
