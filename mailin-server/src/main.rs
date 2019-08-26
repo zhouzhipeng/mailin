@@ -1,7 +1,10 @@
+mod store;
+
+use crate::store::MailStore;
 use chrono::Local;
 use failure::{format_err, Error};
 use getopts::Options;
-use mailin_embedded::{HeloResult, Server, SslConfig};
+use mailin_embedded::{DataResult, HeloResult, Server, SslConfig};
 use mxdns::MxDns;
 use nix::unistd;
 use privdrop::PrivDrop;
@@ -12,6 +15,8 @@ use simplelog::{
 use statsd;
 use std::env;
 use std::fs::File;
+use std::io;
+use std::io::Write;
 use std::net::{IpAddr, TcpListener};
 use std::path::Path;
 
@@ -37,6 +42,7 @@ const OPT_STATSD_PREFIX: &str = "statsd-prefix";
 struct Handler<'a> {
     mxdns: &'a MxDns,
     statsd: Option<&'a statsd::Client>,
+    mailstore: MailStore,
 }
 
 impl<'a> mailin_embedded::Handler for Handler<'a> {
@@ -57,6 +63,30 @@ impl<'a> mailin_embedded::Handler for Handler<'a> {
                     HeloResult::Ok
                 }
             }
+        }
+    }
+
+    fn data_start(
+        &mut self,
+        _domain: &str,
+        _from: &str,
+        _is8bit: bool,
+        _to: &[String],
+    ) -> DataResult {
+        match self.mailstore.start_message(b"some_id") {
+            Ok(()) => DataResult::Ok,
+            Err(_) => DataResult::InternalError,
+        }
+    }
+
+    fn data(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.mailstore.write_all(buf)
+    }
+
+    fn data_end(&mut self) -> DataResult {
+        match self.mailstore.end_message() {
+            Ok(()) => DataResult::Ok,
+            Err(_) => DataResult::InternalError,
         }
     }
 }
@@ -159,6 +189,7 @@ fn main() -> Result<(), Error> {
     let handler = Handler {
         mxdns: &mxdns,
         statsd: statsd.as_ref(),
+        mailstore: MailStore::new(),
     };
     let mut server = Server::new(handler);
     server

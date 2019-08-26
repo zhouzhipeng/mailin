@@ -1,14 +1,12 @@
 # Mailin
 
-This is a library for writing SMTP servers in Rust. The library handles parsing, the SMTP state machine and building responses.
-
-Programs using the Mailin library are responsible for all IO including opening sockets and storing messages. Mailin makes the lifecycle of an SMTP session available by calling methods on an object that implements the `Handler` trait.
+This repository contains libraries for writing SMTP servers in Rust.
 
 ## Directory structure
 
 ### mailin
 
-The [mailin](mailin) directory contains the Mailin library. 
+The [mailin](mailin) directory contains the Mailin library. The library handles parsing, the SMTP state machine and building responses.
 
 ### mailin embedded
 
@@ -21,3 +19,7 @@ The  [mailin-server](mailin-server) directory contains an example standalone SMT
 ### mxdns
 
 The [mxdns](mxdns) directory contains utilities for looking up IP addresses on DNS based blocklists and for doing reverse dns lookups.
+
+### mime event
+
+The [mime-event](mime-event) directory contains an event driven MIME parser. This parser can parse MIME messages line by line without allocating memory for the whole message.

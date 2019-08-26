@@ -1,0 +1,22 @@
+[package]
+name = "mime-event"
+version = "0.1.0"
+authors = ["Alienscience <saul@alienscience.org.uk>"]
+description = "Event driven MIME parser for email messages"
+homepage = "https://gitlab.com/alienscience/mailin"
+repository = "https://gitlab.com/alienscience/mailin"
+readme = "README.md"
+keywords = ["mime","smtp","email"]
+categories = ["email","parser-implementations"]
+license = "MIT OR Apache-2.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+nom = "5"
+display_bytes = "0.2"
+
+[dev-dependencies]
+maplit = "1"
+pretty_assertions = "0.6"
