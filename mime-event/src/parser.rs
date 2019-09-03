@@ -1,275 +1,220 @@
+use crate::event::*;
 use crate::header::Header;
-use nom::branch::alt;
-use nom::bytes::complete::{is_not, tag, tag_no_case, take_while1};
-use nom::combinator::{map, recognize};
-use nom::multi::fold_many0;
-use nom::sequence::{pair, preceded, terminated};
-use nom::IResult;
+use crate::header_buffer::HeaderBuffer;
+use crate::line_parser;
 use std::collections::HashMap;
 use std::io;
+use std::io::Write;
+use std::panic;
 
-// Parse a header line.
-// The result type must be io::Result to be compatible with io::Write()
-pub(crate) fn header(line: &[u8]) -> io::Result<Header> {
-    let res = alt((
-        header_end,
-        content,
-        from,
-        to,
-        subject,
-        sender,
-        reply_to,
-        message_id,
-        date,
-        content_disposition,
-        content_description,
-        unstructured,
-    ))(line);
-    match res {
-        Ok((_, header)) => Ok(header),
-        Err(err) => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("{:?}", err),
-        )),
-    }
+/// A Handler receives parser events
+pub trait Handler {
+    fn event<'a>(&mut self, ev: Event<'a>);
 }
 
-fn content(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(header_with_params(b"Content-Type"), |v| {
-        Header::ContentType {
-            mime_type: v.0,
-            parameters: v.1,
+#[derive(Clone, Copy, Debug)]
+enum State {
+    Start,
+    Header,
+    MultipartHeader,
+    MultipartPreamble,
+    PartStart,
+    Body,
+}
+
+struct MultipartState {
+    content_type: Multipart,
+    boundary: Vec<u8>,
+}
+
+/// EventParser is an event driven email parser.
+pub struct EventParser<W: Write, H: Handler> {
+    writer: W,
+    state: State,
+    offset: usize,
+    handler: H,
+    content_type: Mime,
+    boundary: Option<Vec<u8>>,
+    multipart_stack: Vec<MultipartState>,
+    header_buffer: HeaderBuffer,
+}
+
+impl<W: Write, H: Handler> EventParser<W, H> {
+    /// Create a new EventParser.
+    /// Writing to the EventParser will write to the writer.
+    /// Writing to the EventParser will produce events that are sent to the handler.
+    pub fn new(writer: W, handler: H) -> Self {
+        Self {
+            writer,
+            state: State::Start,
+            offset: 0,
+            handler,
+            content_type: Mime::Type(b"text/plain".to_vec()),
+            boundary: None,
+            multipart_stack: Vec::default(),
+            header_buffer: HeaderBuffer::default(),
         }
-    })(buf)
-}
+    }
 
-fn content_disposition(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(header_with_params(b"Content-Disposition"), |v| {
-        Header::ContentDisposition {
-            disposition_type: v.0,
-            parameters: v.1,
+    fn is_open_boundary(&self, buf: &[u8]) -> bool {
+        self.boundary
+            .as_ref()
+            .filter(|b| buf.starts_with(b))
+            .is_some()
+    }
+
+    fn is_close_boundary(&self, buf: &[u8]) -> bool {
+        self.boundary
+            .as_ref()
+            .filter(|b| {
+                let end = b.len();
+                buf.starts_with(b) && buf.len() > end + 2 && buf.ends_with(b"--\r\n")
+            })
+            .is_some()
+    }
+
+    fn header_field(&mut self, buf: &[u8], state: State) -> io::Result<State> {
+        if buf.starts_with(b"\r\n") {
+            self.state = match state {
+                State::MultipartHeader => State::MultipartPreamble,
+                _ => {
+                    self.handler.event(Event::BodyStart {
+                        offset: self.offset + 2,
+                    });
+                    State::Body
+                }
+            };
+            Ok(self.state)
+        } else {
+            let token = line_parser::header(&buf)?;
+            if let Header::ContentType {
+                mime_type: mtype,
+                parameters: params,
+            } = token.clone()
+            {
+                self.content_type(mtype, params);
+            }
+            self.handler.event(Event::Header(token));
+            if let Mime::Multipart(_) = self.content_type {
+                Ok(State::MultipartHeader)
+            } else {
+                Ok(state)
+            }
         }
-    })(buf)
-}
-
-// Parse a header field followed by parameters
-fn header_with_params(
-    header: &[u8],
-) -> impl Fn(&[u8]) -> IResult<&[u8], (&[u8], HashMap<&[u8], Vec<u8>>)> + '_ {
-    move |buf: &[u8]| {
-        let preamble = match_header_key(header);
-        let (i, value) = preceded(preamble, header_value_with_parameters)(buf)?;
-        let parameter_parser = terminated(parameters, tag(b"\r\n"));
-        let (i, params) = parameter_parser(&i)?;
-        Ok((i, (value, params)))
     }
-}
 
-fn match_header_key(header: &[u8]) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> + '_ {
-    move |buf: &[u8]| terminated(tag_no_case(header), colon_space)(buf)
-}
-
-fn colon_space(buf: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(pair(tag(b":"), space))(buf)
-}
-
-fn space(buf: &[u8]) -> IResult<&[u8], &[u8]> {
-    take_while1(|c| c == b' ')(buf)
-}
-
-fn header_value_with_parameters(buf: &[u8]) -> IResult<&[u8], &[u8]> {
-    is_not(";\r\n")(buf)
-}
-
-fn parameters(buf: &[u8]) -> IResult<&[u8], HashMap<&[u8], Vec<u8>>> {
-    fold_many0(parameter, HashMap::new(), |mut acc: HashMap<_, _>, item| {
-        acc.insert(item.0, item.1);
-        acc
-    })(buf)
-}
-
-fn parameter(buf: &[u8]) -> IResult<&[u8], (&[u8], Vec<u8>)> {
-    let preamble = pair(tag(b";"), space);
-    let (i, attribute) = preceded(preamble, token)(buf)?;
-    let (i, value) = preceded(tag(b"="), parameter_value)(i)?;
-    Ok((i, (attribute, value)))
-}
-
-fn parameter_value(buf: &[u8]) -> IResult<&[u8], Vec<u8>> {
-    let token_vec = map(token, |b: &[u8]| b.to_vec());
-    alt((token_vec, quoted_string))(buf)
-}
-
-fn token(buf: &[u8]) -> IResult<&[u8], &[u8]> {
-    take_while1(|c| c != b' ' && !tspecial(c) && !ctl(c))(buf)
-}
-
-fn quoted_string(buf: &[u8]) -> IResult<&[u8], Vec<u8>> {
-    let qs = preceded(tag(b"\""), in_quotes);
-    terminated(qs, tag(b"\""))(buf)
-}
-
-fn in_quotes(buf: &[u8]) -> IResult<&[u8], Vec<u8>> {
-    let mut ret = Vec::new();
-    let mut i = 0;
-    while i < buf.len() && buf[i] != b'"' {
-        if buf[i] == b'\\' {
-            i += 1;
+    // Handle Content-Type headers
+    fn content_type(&mut self, mtype: &[u8], params: HashMap<&[u8], Vec<u8>>) {
+        if let (Mime::Multipart(m), Some(b)) = (&self.content_type, &self.boundary) {
+            self.multipart_stack.push(MultipartState {
+                content_type: m.clone(),
+                boundary: b.clone(),
+            })
         }
-        ret.push(buf[i]);
-        i += 1;
-    }
-    Ok((&buf[i..], ret))
-}
-
-fn ctl(c: u8) -> bool {
-    c == b'\r' || c == b'\n'
-}
-
-fn tspecial(c: u8) -> bool {
-    c == b'('
-        || c == b')'
-        || c == b'<'
-        || c == b'>'
-        || c == b'@'
-        || c == b','
-        || c == b';'
-        || c == b':'
-        || c == b'\\'
-        || c == b'"'
-        || c == b'/'
-        || c == b'['
-        || c == b']'
-        || c == b'?'
-        || c == b'='
-}
-
-fn match_unstructured(header: &[u8]) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> + '_ {
-    move |buf: &[u8]| {
-        let value_parser = preceded(match_header_key(header), unstructured_value);
-        terminated(value_parser, tag(b"\r\n"))(buf)
-    }
-}
-
-fn from(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"From"), |v| Header::From(v))(buf)
-}
-
-fn to(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"To"), |v| Header::To(v))(buf)
-}
-
-fn subject(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Subject"), |v| Header::Subject(v))(buf)
-}
-
-fn sender(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Sender"), |v| Header::Sender(v))(buf)
-}
-
-fn reply_to(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Reply-To"), |v| Header::ReplyTo(v))(buf)
-}
-
-fn message_id(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Message-ID"), |v| Header::MessageId(v))(buf)
-}
-
-fn date(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Date"), |v| Header::Date(v))(buf)
-}
-
-fn content_description(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Content-Description"), |v| {
-        Header::ContentDescription(v)
-    })(buf)
-}
-
-fn unstructured(buf: &[u8]) -> IResult<&[u8], Header> {
-    let (i, key) = terminated(header_key, colon_space)(buf)?;
-    let (i, value) = terminated(unstructured_value, tag(b"\r\n"))(i)?;
-    Ok((i, Header::Unstructured(key, value)))
-}
-
-fn header_key(buf: &[u8]) -> IResult<&[u8], &[u8]> {
-    take_while1(|c| c != b':' && c != b' ')(buf)
-}
-
-fn unstructured_value(buf: &[u8]) -> IResult<&[u8], &[u8]> {
-    is_not("\r\n")(buf)
-}
-
-fn header_end(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(tag(b"\r\n"), |_| Header::End)(buf)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use maplit::hashmap;
-
-    #[test]
-    fn unstructured_header() {
-        let tok = header(b"X-sender: <sender@sendersdomain.com>\r\n").unwrap();
-        assert_eq!(
-            tok,
-            Header::Unstructured(b"X-sender", b"<sender@sendersdomain.com>")
-        )
+        self.content_type = mime_type(mtype);
+        if let Mime::Multipart(_) = &self.content_type {
+            self.boundary = params.get(&(b"boundary")[..]).map(|boundary| {
+                let mut full = b"--".to_vec();
+                full.extend_from_slice(boundary);
+                full
+            });
+        }
     }
 
-    #[test]
-    fn end_header() {
-        let tok = header(b"\r\n").unwrap();
-        assert_eq!(tok, Header::End)
-    }
-
-    #[test]
-    fn content_type() {
-        let tok = header(b"Content-Type: multipart/mixed; boundary=--boundary--\r\n").unwrap();
-        let expected_params = hashmap! {
-            b"boundary".as_ref() => b"--boundary--".to_vec(),
-        };
-        assert_eq!(
-            tok,
-            Header::ContentType {
-                mime_type: b"multipart/mixed",
-                parameters: expected_params,
+    // Called when data is written to the writer
+    fn handle_write(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.writer.write_all(buf)?;
+        match self.state {
+            State::Start => {
+                self.handler.event(Event::Start);
+                self.state = State::Header;
+                self.handle_header(buf)
             }
-        )
+            State::Header | State::MultipartHeader | State::PartStart => self.handle_header(buf),
+            _ => self.handle_line(buf, buf.len()),
+        }
     }
 
-    #[test]
-    fn content_disposition() {
-        let mut line = br#"Content-Disposition: attachment; filename=genome.jpeg; modification-date="Wed, 12 Feb 1997 16:29:51 -0500""#.to_vec();
-        line.extend_from_slice(b"\r\n");
-        let tok = header(&line).unwrap();
-        let expected_params = hashmap! {
-            b"filename".as_ref() => b"genome.jpeg".to_vec(),
-            b"modification-date".as_ref() => b"Wed, 12 Feb 1997 16:29:51 -0500".to_vec(),
-        };
-        assert_eq!(
-            tok,
-            Header::ContentDisposition {
-                disposition_type: b"attachment",
-                parameters: expected_params,
+    fn handle_header(&mut self, buf: &[u8]) -> io::Result<()> {
+        if buf.starts_with(b"\r\n") {
+            if let Some((line, length)) = self.header_buffer.take() {
+                self.handle_line(&line, length)?;
             }
-        )
+            self.handle_line(buf, buf.len())
+        } else if let Some((line, length)) = self.header_buffer.next_line(buf) {
+            self.handle_line(&line, length)
+        } else {
+            Ok(())
+        }
     }
 
-    #[test]
-    fn quoted_boundary() {
-        let tok =
-            header(b"Content-Type: multipart/mixed; boundary=\"-- boundary --\"\r\n").unwrap();
-        let expected_params = hashmap! {
-            b"boundary".as_ref() => b"-- boundary --".to_vec(),
-        };
-        assert_eq!(
-            tok,
-            Header::ContentType {
-                mime_type: b"multipart/mixed",
-                parameters: expected_params,
+    // Called when a complete line of data is available
+    fn handle_line(&mut self, buf: &[u8], buf_len: usize) -> io::Result<()> {
+        self.writer.write_all(buf)?;
+        let next_state = match self.state {
+            State::Start => unreachable!(),
+            State::MultipartHeader => self.header_field(buf, State::MultipartHeader)?,
+            State::Header => self.header_field(buf, State::Header)?,
+            State::PartStart => {
+                self.handler.event(Event::PartStart {
+                    offset: self.offset,
+                });
+                self.header_field(buf, State::Header)?
             }
-        )
+            State::MultipartPreamble => {
+                if self.is_open_boundary(buf) {
+                    if let Mime::Multipart(m) = self.content_type {
+                        self.handler.event(Event::MultipartStart(m.clone()));
+                    }
+                    State::PartStart
+                } else {
+                    State::MultipartPreamble
+                }
+            }
+            State::Body => {
+                if self.is_close_boundary(buf) {
+                    self.handler.event(Event::PartEnd {
+                        offset: self.offset,
+                    });
+                    self.handler.event(Event::MultipartEnd);
+                    // Use last multipart if available
+                    if let Some(last) = self.multipart_stack.pop() {
+                        self.content_type = Mime::Multipart(last.content_type);
+                        self.boundary = Some(last.boundary);
+                    }
+                    State::Header
+                } else if self.is_open_boundary(buf) {
+                    self.handler.event(Event::PartEnd {
+                        offset: self.offset,
+                    });
+                    State::PartStart
+                } else {
+                    self.handler.event(Event::Body(&buf));
+                    State::Body
+                }
+            }
+        };
+        self.state = next_state;
+        self.offset += buf_len;
+        Ok(())
+    }
+}
+
+/// Write data to the EventParser to get parsing events.
+impl<W: Write, H: Handler> Write for EventParser<W, H> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.handle_write(buf)?;
+        Ok(buf.len())
     }
 
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer.flush()
+    }
+}
+
+/// The EventParser is not finished until dropped
+impl<W: Write, H: Handler> Drop for EventParser<W, H> {
+    fn drop(&mut self) {
+        self.handler.event(Event::End);
+    }
 }

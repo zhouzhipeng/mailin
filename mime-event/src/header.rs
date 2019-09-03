@@ -2,8 +2,8 @@ use display_bytes::display_bytes;
 use std::collections::HashMap;
 use std::fmt;
 
-/// Header contains information about an email header
-#[derive(Debug, PartialEq, Clone)]
+/// Header contains information about an email header event
+#[derive(PartialEq, Clone)]
 pub enum Header<'a> {
     /// A header containing unstructured information as key, value
     Unstructured(&'a [u8], &'a [u8]),
@@ -54,7 +54,7 @@ impl<'a> Header<'a> {
     }
 }
 
-impl<'a> fmt::Display for Header<'a> {
+impl<'a> fmt::Debug for Header<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Header::Unstructured(key, value) => write!(
