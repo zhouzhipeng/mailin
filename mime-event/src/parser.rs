@@ -150,7 +150,6 @@ impl<W: Write, H: Handler> EventParser<W, H> {
 
     // Called when a complete line of data is available
     fn handle_line(&mut self, buf: &[u8], buf_len: usize) -> io::Result<()> {
-        self.writer.write_all(buf)?;
         let next_state = match self.state {
             State::Start => unreachable!(),
             State::MultipartHeader => self.header_field(buf, State::MultipartHeader)?,

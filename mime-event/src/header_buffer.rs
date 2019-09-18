@@ -4,7 +4,7 @@ use std::mem;
 #[derive(Default)]
 pub(crate) struct HeaderBuffer {
     has_value: bool,
-    length: usize,
+    length: usize, // Length of the incoming line
     line: Vec<u8>,
 }
 
@@ -26,8 +26,6 @@ impl HeaderBuffer {
             let length = self.length;
             let ret = mem::replace(&mut self.line, line.to_vec());
             self.length = line.len();
-            // let buffer_str = String::from_utf8_lossy(&ret);
-            // println!("Header Buffer: {}", &buffer_str);
             Some((ret, length))
         }
     }

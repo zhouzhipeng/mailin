@@ -29,7 +29,7 @@ pub struct Part {
 }
 
 /// Common header fields
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq)]
 pub struct HeaderFields {
     pub message_id: Option<Vec<u8>>,
     pub from: Option<Vec<u8>>,
@@ -40,6 +40,7 @@ pub struct HeaderFields {
     pub reply_to: Option<Vec<u8>>,
 }
 
+#[derive(Clone)]
 pub struct ContentType {
     mime_type: Mime,
     parameters: HashMap<Vec<u8>, Vec<u8>>,
@@ -52,9 +53,34 @@ pub struct ContentDisposition {
 }
 
 impl Part {
+    /// Get start and length of the part
+    pub fn position(&self) -> (usize, usize) {
+        (self.start, self.end - self.start + 1)
+    }
+
     /// Get start and length of the body
     pub fn body(&self) -> (usize, usize) {
         (self.body_start, self.end - self.body_start + 1)
+    }
+}
+
+impl Message {
+    pub fn top(&self) -> Option<&Part> {
+        self.parts.get(self.top)
+    }
+
+    pub fn text(&self) -> Option<&Part> {
+        self.text.and_then(|i| self.parts.get(i))
+    }
+
+    pub fn html(&self) -> Option<&Part> {
+        self.html.and_then(|i| self.parts.get(i))
+    }
+
+    pub fn attachments(&self) -> impl Iterator<Item = &Part> {
+        self.attachments
+            .iter()
+            .flat_map(move |i| self.parts.get(*i))
     }
 }
 
@@ -72,6 +98,7 @@ enum Target {
     Top,
     TopAlternative,
     Alternative,
+    FirstMixed,
     Attachments,
     Inlines,
     Other,
@@ -91,6 +118,7 @@ impl Handler for &mut MessageHandler {
             Event::MultipartStart(m) => self.multipart_start(m),
             Event::PartStart { offset } => self.part_start(offset),
             Event::PartEnd { offset } => self.part_end(offset),
+            Event::BodyStart { offset } => self.body_start(offset),
             Event::Body(_) => (),
             Event::MultipartEnd => (),
             Event::End => (),
@@ -151,6 +179,7 @@ impl MessageHandler {
         self.target = match multipart {
             Multipart::Alternative if self.target == Target::Top => Target::TopAlternative,
             Multipart::Alternative => Target::Alternative,
+            Multipart::Mixed if self.target == Target::Top => Target::FirstMixed,
             Multipart::Mixed => Target::Attachments,
             Multipart::Digest => Target::Attachments,
         }
@@ -162,40 +191,37 @@ impl MessageHandler {
 
     fn part_end(&mut self, offset: usize) {
         self.current_part.end = offset;
-        let content_type = &self.current_part.content_type;
+        let content_type = self.current_part.content_type.clone();
+        let current = self.take_current();
+        self.message.parts.push(current);
+        let part_index = self.message.parts.len() - 1;
         match self.target {
-            Target::Top => self.message.top = self.take_current(),
-            Target::TopAlternative if is_content(content_type, b"text/plain") => {
-                self.message.top = self.take_current();
+            Target::Top => self.message.top = part_index,
+            Target::TopAlternative if is_content(&content_type, b"text/plain") => {
+                self.message.top = part_index;
+                self.message.text = Some(part_index);
             }
-            Target::TopAlternative if is_content(content_type, b"text/html") => {
-                self.message.html = Some(self.take_current());
+            Target::TopAlternative if is_content(&content_type, b"text/html") => {
+                self.message.html = Some(part_index);
             }
-            Target::TopAlternative => self.message.top = self.take_current(),
-            Target::Alternative => self.add_attachment(),
-            Target::Attachments => self.add_attachment(),
-            Target::Inlines => self.add_inline(),
-            Target::Other => self.add_other(),
+            Target::TopAlternative => self.message.top = part_index,
+            Target::FirstMixed => {
+                self.message.top = part_index;
+                self.target = Target::Attachments;
+            }
+            Target::Alternative => self.message.attachments.push(part_index),
+            Target::Attachments => self.message.attachments.push(part_index),
+            Target::Inlines => self.message.inlines.push(part_index),
+            Target::Other => self.message.other.push(part_index),
         }
+    }
+
+    fn body_start(&mut self, offset: usize) {
+        self.current_part.body_start = offset;
     }
 
     fn take_current(&mut self) -> Part {
         mem::replace(&mut self.current_part, Part::default())
-    }
-
-    fn add_attachment(&mut self) {
-        let current = self.take_current();
-        self.message.attachments.push(current);
-    }
-
-    fn add_inline(&mut self) {
-        let current = self.take_current();
-        self.message.inlines.push(current);
-    }
-
-    fn add_other(&mut self) {
-        let current = self.take_current();
-        self.message.other.push(current);
     }
 }
 
