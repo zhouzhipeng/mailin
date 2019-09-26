@@ -1,7 +1,7 @@
 use chrono::Local;
 use failure::{format_err, Error};
 use getopts::Options;
-use mailin_embedded::{HeloResult, Server, SslConfig};
+use mailin_embedded::{DataResult, HeloResult, Server, SslConfig};
 use mxdns::MxDns;
 use nix::unistd;
 use privdrop::PrivDrop;
@@ -13,6 +13,8 @@ use std::env;
 use std::fs::File;
 use std::net::{IpAddr, TcpListener};
 use std::path::Path;
+
+mod mailstore;
 
 const DOMAIN: &str = "localhost";
 const DEFAULT_ADDRESS: &str = "127.0.0.1:8025";
@@ -49,6 +51,16 @@ impl mailin_embedded::Handler for Handler {
                 }
             }
         }
+    }
+
+    fn data(
+        &mut self,
+        _domain: &str,
+        _from: &str,
+        _is8bit: bool,
+        recipients: &[String],
+    ) -> DataResult {
+        mailstore::save_message(recipients)
     }
 }
 

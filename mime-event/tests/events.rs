@@ -62,6 +62,7 @@ fn parse_message(message: &[u8], handler: &mut TestHandler) -> io::Result<()> {
         buf.extend_from_slice(b"\r\n");
         parser.write_all(&buf)?;
     }
+    parser.close();
     Ok(())
 }
 

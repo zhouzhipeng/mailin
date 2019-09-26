@@ -53,7 +53,7 @@ trait State {
         cmd: Cmd,
     ) -> (Response, Option<Box<dyn State>>);
 
-    // Most state will convert an input line into a command.
+    // Most states will convert an input line into a command.
     // Some states, e.g Data, need to process input lines differently and will
     // override this method.
     fn process_line<'a>(self: &mut Self, line: &'a [u8]) -> Either<Cmd<'a>, Response> {

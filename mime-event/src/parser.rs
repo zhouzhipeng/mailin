@@ -56,6 +56,12 @@ impl<W: Write, H: Handler> EventParser<W, H> {
         }
     }
 
+    /// No more data, parsing complete
+    pub fn close(mut self) -> H {
+        self.handler.event(Event::End);
+        self.handler
+    }
+
     fn is_open_boundary(&self, buf: &[u8]) -> bool {
         self.boundary
             .as_ref()
@@ -208,12 +214,5 @@ impl<W: Write, H: Handler> Write for EventParser<W, H> {
 
     fn flush(&mut self) -> io::Result<()> {
         self.writer.flush()
-    }
-}
-
-/// The EventParser is not finished until dropped
-impl<W: Write, H: Handler> Drop for EventParser<W, H> {
-    fn drop(&mut self) {
-        self.handler.event(Event::End);
     }
 }

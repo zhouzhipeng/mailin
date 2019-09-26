@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 mailin-embedded = { path="../mailin-embedded" }
 mxdns = { path="../mxdns" }
+mime-event = { path="../mime-event" }
 log = "0.4"
 simplelog = "0.7"
 chrono = "0.4"

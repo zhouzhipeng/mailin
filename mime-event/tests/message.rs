@@ -5,8 +5,7 @@ use std::io::Write;
 #[test]
 fn multipart_alternative() {
     let msg = include_bytes!("multipart_alternative.msg");
-    let mut handler = MessageHandler::default();
-    parse_message(&msg[..], &mut handler).unwrap();
+    let handler = parse_message(&msg[..], MessageHandler::default()).unwrap();
     let message = handler.get_message();
     let expected_header = HeaderFields {
         message_id: None,
@@ -28,8 +27,7 @@ fn multipart_alternative() {
 #[test]
 fn multipart_mixed() {
     let msg = include_bytes!("multipart_mixed.msg");
-    let mut handler = MessageHandler::default();
-    parse_message(&msg[..], &mut handler).unwrap();
+    let handler = parse_message(&msg[..], MessageHandler::default()).unwrap();
     let message = handler.get_message();
     let expected_top_header = HeaderFields {
         message_id: None,
@@ -56,7 +54,7 @@ fn field(value: &[u8]) -> Option<Vec<u8>> {
     Some(value.to_vec())
 }
 
-fn parse_message(message: &[u8], handler: &mut MessageHandler) -> io::Result<()> {
+fn parse_message(message: &[u8], handler: MessageHandler) -> io::Result<MessageHandler> {
     let writer = io::sink();
     let mut parser = EventParser::new(writer, handler);
     for line in message.split(|ch| *ch == b'\n') {
@@ -64,5 +62,5 @@ fn parse_message(message: &[u8], handler: &mut MessageHandler) -> io::Result<()>
         buf.extend_from_slice(b"\r\n");
         parser.write_all(&buf)?;
     }
-    Ok(())
+    Ok(parser.close())
 }

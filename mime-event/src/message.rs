@@ -110,7 +110,7 @@ impl Default for Target {
     }
 }
 
-impl Handler for &mut MessageHandler {
+impl Handler for MessageHandler {
     fn event<'a>(&mut self, ev: Event<'a>) {
         match ev {
             Event::Start => (),
