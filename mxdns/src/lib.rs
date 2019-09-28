@@ -422,16 +422,16 @@ mod tests {
     #[test]
     fn reverse_lookup() {
         let mxdns = build_mx_dns();
-        let addr = "88.198.127.200".parse::<IpAddr>().unwrap();
+        let addr = "116.203.3.137".parse::<IpAddr>().unwrap();
         let reverse = mxdns.reverse_dns(addr).unwrap().unwrap();
-        assert_eq!(reverse, "mail.alienscience.org.uk.");
+        assert_eq!(reverse, "mail.alienscience.org.");
     }
 
     #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn fcrdns_ok() {
         let mxdns = build_mx_dns();
-        let res = mxdns.fcrdns([88, 198, 127, 200]);
+        let res = mxdns.fcrdns([116, 203, 3, 137]);
         assert!(
             matches!(res, Ok(FCrDNS::Confirmed(_))),
             "Valid mail server failed fcrdns: {:?}",
@@ -463,5 +463,4 @@ mod tests {
             res
         );
     }
-
 }
