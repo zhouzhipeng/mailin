@@ -13,7 +13,7 @@ edition = "2018"
 
 [dependencies]
 mailin = { path="../mailin", version = "0.4.0" }
-threadpool = "1.0"
+scoped_threadpool = "0.1"
 log = "0.4"
 lazy_static = "1.1"
 openssl = "0.10"

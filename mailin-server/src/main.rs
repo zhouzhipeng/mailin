@@ -1,6 +1,7 @@
 use chrono::Local;
 use failure::{format_err, Error};
 use getopts::Options;
+use log::warn;
 use mailin_embedded::{HeloResult, Server, SslConfig};
 use mxdns::MxDns;
 use nix::unistd;
@@ -9,6 +10,7 @@ use simplelog::{
     CombinedLogger, Config, LevelFilter, SharedLogger, SimpleLogger, TermLogger, TerminalMode,
     WriteLogger,
 };
+use statsd;
 use std::env;
 use std::fs::File;
 use std::net::{IpAddr, TcpListener};
@@ -29,25 +31,41 @@ const OPT_SSL_CHAIN: &str = "ssl-chain";
 const OPT_BLOCKLIST: &str = "blocklist";
 const OPT_USER: &str = "user";
 const OPT_GROUP: &str = "group";
+const OPT_STATSD_SERVER: &str = "statsd-server";
+const OPT_STATSD_PREFIX: &str = "statsd-prefix";
 
 #[derive(Clone)]
-struct Handler {
-    mxdns: MxDns,
+struct Handler<'a> {
+    mxdns: &'a MxDns,
+    statsd: Option<&'a statsd::Client>,
 }
 
-impl mailin_embedded::Handler for Handler {
+impl<'a> mailin_embedded::Handler for Handler<'a> {
     fn helo(&mut self, ip: IpAddr, _domain: &str) -> HeloResult {
+        self.incr_stat("helo");
         // Does the reverse DNS match the forward dns?
         let rdns = self.mxdns.fcrdns(ip);
         match rdns {
-            Ok(ref res) if !res.is_confirmed() => HeloResult::BadHelo,
+            Ok(ref res) if !res.is_confirmed() => {
+                self.incr_stat("fail.fcrdns");
+                HeloResult::BadHelo
+            }
             _ => {
                 if self.mxdns.is_blocked(ip).unwrap_or(false) {
+                    self.incr_stat("fail.blocklist");
                     HeloResult::BlockedIp
                 } else {
                     HeloResult::Ok
                 }
             }
+        }
+    }
+}
+
+impl<'a> Handler<'a> {
+    fn incr_stat(&self, name: &str) {
+        for client in self.statsd.iter() {
+            client.incr(name);
         }
     }
 }
@@ -101,6 +119,18 @@ fn main() -> Result<(), Error> {
     );
     opts.optopt("", OPT_USER, "user to run as", "USER");
     opts.optopt("", OPT_GROUP, "group to run as", "GROUP");
+    opts.optopt(
+        "",
+        OPT_STATSD_SERVER,
+        "statsd server address",
+        "STATSD_ADDRESS",
+    );
+    opts.optopt(
+        "",
+        OPT_STATSD_PREFIX,
+        "the prefix of the statsd stats",
+        "PREFIX",
+    );
     let matches = opts
         .parse(&args[1..])
         .map_err(|err| format_err!("Error parsing command line: {}", err))?;
@@ -108,6 +138,8 @@ fn main() -> Result<(), Error> {
         print_usage(&args[0], &opts);
         return Ok(());
     }
+    let log_directory = matches.opt_str(OPT_LOG);
+    setup_logger(log_directory)?;
     let ssl_config = match (matches.opt_str(OPT_SSL_CERT), matches.opt_str(OPT_SSL_KEY)) {
         (Some(cert_path), Some(key_path)) => SslConfig::SelfSigned {
             cert_path,
@@ -120,7 +152,20 @@ fn main() -> Result<(), Error> {
         .unwrap_or_else(|| DOMAIN.to_owned());
     let blocklists = matches.opt_strs(OPT_BLOCKLIST);
     let mxdns = MxDns::new(blocklists).map_err(|e| format_err!("{}", e))?;
-    let handler = Handler { mxdns };
+    let statsd_prefix = matches
+        .opt_str(OPT_STATSD_PREFIX)
+        .unwrap_or_else(|| "mailin".to_owned());
+    let statsd = matches.opt_str(OPT_STATSD_SERVER).and_then(|addr| {
+        let res = statsd::Client::new(addr, &statsd_prefix);
+        if let Err(e) = &res {
+            warn!("Statd failure : {}", e);
+        }
+        res.ok()
+    });
+    let handler = Handler {
+        mxdns: &mxdns,
+        statsd: statsd.as_ref(),
+    };
     let mut server = Server::new(handler);
     server
         .with_name(domain)
@@ -146,8 +191,5 @@ fn main() -> Result<(), Error> {
         privdrop.apply()?;
     }
 
-    let log_directory = matches.opt_str(OPT_LOG);
-    setup_logger(log_directory)?;
-
-    server.serve_forever().map_err(|e| format_err!("{}", e))
+    server.serve().map_err(|e| format_err!("{}", e))
 }

@@ -17,7 +17,7 @@
 //! server.with_name("example.com")
 //!    .with_ssl(SslConfig::None)?
 //!    .with_addr("127.0.0.1:25")?;
-//! server.serve_forever();
+//! server.serve();
 //! # Ok::<(), Error>(())
 //! ```
 
@@ -32,7 +32,6 @@ mod ssl;
 mod utils;
 
 use crate::err::Error;
-pub use crate::running::RunningServer;
 use crate::ssl::setup_ssl;
 pub use mailin::{
     AuthMechanism, AuthResult, DataResult, Handler, HeloResult, MailResult, RcptResult,
@@ -65,12 +64,12 @@ pub enum SslConfig {
 /// `Server` is used to configure and start the SMTP server
 pub struct Server<H>
 where
-    H: Handler + Clone + Send + 'static,
+    H: Handler + Clone + Send,
 {
     handler: H,
     name: String,
     ssl_acceptor: Option<SslAcceptor>,
-    num_threads: usize,
+    num_threads: u32,
     auth: Vec<AuthMechanism>,
     tcp_listener: Option<TcpListener>,
     socket_address: Vec<SocketAddr>,
@@ -78,7 +77,7 @@ where
 
 impl<H> Server<H>
 where
-    H: Handler + Clone + Send + 'static,
+    H: Handler + Clone + Send,
 {
     /// Create a new server with the given Handler
     pub fn new(handler: H) -> Self {
@@ -110,7 +109,7 @@ where
 
     /// Set the size of the threadpool which is equal to the maximum number of
     /// concurrent SMTP sessions.
-    pub fn with_num_threads(&mut self, num_threads: usize) -> &mut Self {
+    pub fn with_num_threads(&mut self, num_threads: u32) -> &mut Self {
         self.num_threads = num_threads;
         self
     }
@@ -149,17 +148,8 @@ where
         Ok(self)
     }
 
-    /// Start the SMTP server in a background thread
-    pub fn serve(self) -> Result<RunningServer, Error> {
-        RunningServer::serve(self)
-    }
-
     /// Start the SMTP server and run forever
-    pub fn serve_forever(self) -> Result<(), Error> {
-        let running = RunningServer::serve(self)?;
-        running
-            .join_handle
-            .join()
-            .map_err(|_| Error::new("Error joining server"))
+    pub fn serve(self) -> Result<(), Error> {
+        running::serve(self)
     }
 }
