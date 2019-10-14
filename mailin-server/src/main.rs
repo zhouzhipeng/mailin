@@ -1,7 +1,6 @@
 use chrono::Local;
 use failure::{format_err, Error};
 use getopts::Options;
-use log::warn;
 use mailin_embedded::{HeloResult, Server, SslConfig};
 use mxdns::MxDns;
 use nix::unistd;
@@ -138,8 +137,6 @@ fn main() -> Result<(), Error> {
         print_usage(&args[0], &opts);
         return Ok(());
     }
-    let log_directory = matches.opt_str(OPT_LOG);
-    setup_logger(log_directory)?;
     let ssl_config = match (matches.opt_str(OPT_SSL_CERT), matches.opt_str(OPT_SSL_KEY)) {
         (Some(cert_path), Some(key_path)) => SslConfig::SelfSigned {
             cert_path,
@@ -155,13 +152,10 @@ fn main() -> Result<(), Error> {
     let statsd_prefix = matches
         .opt_str(OPT_STATSD_PREFIX)
         .unwrap_or_else(|| "mailin".to_owned());
-    let statsd = matches.opt_str(OPT_STATSD_SERVER).and_then(|addr| {
-        let res = statsd::Client::new(addr, &statsd_prefix);
-        if let Err(e) = &res {
-            warn!("Statd failure : {}", e);
-        }
-        res.ok()
-    });
+    let statsd = matches
+        .opt_str(OPT_STATSD_SERVER)
+        .map(|addr| statsd::Client::new(addr, &statsd_prefix))
+        .transpose()?;
     let handler = Handler {
         mxdns: &mxdns,
         statsd: statsd.as_ref(),
@@ -190,6 +184,9 @@ fn main() -> Result<(), Error> {
         }
         privdrop.apply()?;
     }
+
+    let log_directory = matches.opt_str(OPT_LOG);
+    setup_logger(log_directory)?;
 
     server.serve().map_err(|e| format_err!("{}", e))
 }
