@@ -1,15 +1,15 @@
 use crate::err::Error;
+#[cfg(feature = "ossl")]
+use crate::ossl::SslImpl;
+use crate::ssl::{Ssl, Stream};
 use crate::Server;
 use bufstream::BufStream;
 use lazy_static::lazy_static;
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use mailin::{Action, Handler, Response, Session, SessionBuilder};
-use openssl;
-use openssl::ssl::{SslAcceptor, SslStream};
 use scoped_threadpool::Pool;
 use std::io::{BufRead, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
-use std::sync::Arc;
 use std::time::Duration;
 
 lazy_static! {
@@ -28,7 +28,7 @@ where
     listener: TcpListener,
     handler: H,
     session_builder: SessionBuilder,
-    ssl_acceptor: Option<Arc<SslAcceptor>>,
+    ssl: Option<SslImpl>,
     num_threads: u32,
 }
 
@@ -37,7 +37,7 @@ where
     H: Handler + Clone + Send,
 {
     let mut session_builder = SessionBuilder::new(config.name.clone());
-    if config.ssl_acceptor.is_some() {
+    if config.ssl.is_some() {
         session_builder.enable_start_tls();
     }
     for auth in &config.auth {
@@ -54,7 +54,7 @@ where
         listener: listen,
         handler: config.handler,
         session_builder,
-        ssl_acceptor: config.ssl_acceptor.map(Arc::new),
+        ssl: config.ssl,
         num_threads: config.num_threads,
     };
     run(&config.name, &server_state)
@@ -70,7 +70,7 @@ where
     for conn in server_state.listener.incoming() {
         let stream = conn?;
         let builder = server_state.session_builder.clone();
-        let acceptor = server_state.ssl_acceptor.clone();
+        let acceptor = server_state.ssl.clone();
         let handler_clone = server_state.handler.clone();
         pool.scoped(|scope| {
             scope.execute(move || handle_connection(stream, &builder, acceptor, handler_clone));
@@ -121,15 +121,9 @@ fn write_response(mut writer: &mut dyn Write, res: &Response) -> Result<(), Erro
         .map_err(|e| Error::with_source("Cannot write response", e))
 }
 
-fn upgrade_tls(
-    stream: TcpStream,
-    ssl_acceptor: Option<Arc<SslAcceptor>>,
-) -> Result<SslStream<TcpStream>, Error> {
-    if let Some(acceptor) = ssl_acceptor {
-        let ret = acceptor
-            .accept(stream)
-            .map_err(|e| Error::with_source("Cannot upgrade to TLS", e))?;
-        trace!("Upgrade TLS successful");
+fn upgrade_tls(stream: TcpStream, ssl: Option<SslImpl>) -> Result<Box<dyn Stream>, Error> {
+    if let Some(acceptor) = ssl {
+        let ret = acceptor.accept(stream)?;
         Ok(ret)
     } else {
         Error::bail("Cannot upgrade to TLS without an SslAcceptor")
@@ -140,10 +134,9 @@ fn start_session<H: Handler>(
     session_builder: &SessionBuilder,
     remote: IpAddr,
     mut stream: BufStream<TcpStream>,
-    ssl_acceptor: Option<Arc<SslAcceptor>>,
+    ssl: Option<SslImpl>,
     handler: H,
 ) -> Result<(), Error> {
-    // TODO: have an embedded relay server with authentication
     let mut session = session_builder.build(remote, handler);
     write_response(&mut stream, &session.greeting())?;
     let res = handle_session(&mut session, &mut stream)?;
@@ -151,7 +144,7 @@ fn start_session<H: Handler>(
         let inner_stream = stream
             .into_inner()
             .map_err(|e| Error::with_source("Cannot flush original TcpStream", e))?;
-        let tls = upgrade_tls(inner_stream, ssl_acceptor)?;
+        let tls = upgrade_tls(inner_stream, ssl)?;
         session.tls_active();
         let mut buf_tls = BufStream::new(tls);
         handle_session(&mut session, &mut buf_tls)?;
@@ -162,7 +155,7 @@ fn start_session<H: Handler>(
 fn handle_connection<H: Handler>(
     stream: TcpStream,
     session_builder: &SessionBuilder,
-    ssl_acceptor: Option<Arc<SslAcceptor>>,
+    ssl: Option<SslImpl>,
     handler: H,
 ) {
     let remote = stream
@@ -173,7 +166,7 @@ fn handle_connection<H: Handler>(
     stream.set_read_timeout(Some(*FIVE_MINUTES)).ok();
     stream.set_write_timeout(Some(*FIVE_MINUTES)).ok();
     let bufstream = BufStream::new(stream);
-    if let Err(err) = start_session(&session_builder, remote, bufstream, ssl_acceptor, handler) {
+    if let Err(err) = start_session(&session_builder, remote, bufstream, ssl, handler) {
         error!("({}) {}", remote, err);
     }
 }

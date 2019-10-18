@@ -27,39 +27,21 @@
 /// Custom error type for mailin_embedded
 pub mod err;
 
+#[cfg(feature = "ossl")]
+mod ossl;
 mod running;
 mod ssl;
 mod utils;
 
 use crate::err::Error;
-use crate::ssl::setup_ssl;
+#[cfg(feature = "ossl")]
+use crate::ossl::SslImpl;
+use crate::ssl::Ssl;
+pub use crate::ssl::SslConfig;
 pub use mailin::{
     AuthMechanism, AuthResult, DataResult, Handler, HeloResult, MailResult, RcptResult,
 };
-use openssl::ssl::SslAcceptor;
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
-
-/// `SslConfig` is used to configure the STARTTLS configuration of the server
-pub enum SslConfig {
-    /// Do not support STARTTLS
-    None,
-    /// Use a self-signed certificate for STARTTLS
-    SelfSigned {
-        /// Certificate path
-        cert_path: String,
-        /// Path to key file
-        key_path: String,
-    },
-    /// Use a certificate from an authority
-    Trusted {
-        /// Certificate path
-        cert_path: String,
-        /// Key file path
-        key_path: String,
-        /// Path to CA bundle
-        chain_path: String,
-    },
-}
 
 /// `Server` is used to configure and start the SMTP server
 pub struct Server<H>
@@ -68,7 +50,7 @@ where
 {
     handler: H,
     name: String,
-    ssl_acceptor: Option<SslAcceptor>,
+    ssl: Option<SslImpl>,
     num_threads: u32,
     auth: Vec<AuthMechanism>,
     tcp_listener: Option<TcpListener>,
@@ -84,7 +66,7 @@ where
         Self {
             handler,
             name: "localhost".to_owned(),
-            ssl_acceptor: None,
+            ssl: None,
             num_threads: 4,
             auth: Vec::with_capacity(4),
             tcp_listener: None,
@@ -93,9 +75,9 @@ where
     }
 
     /// Give the server a name
-    pub fn with_name<S>(&mut self, name: S) -> &mut Self
+    pub fn with_name<T>(&mut self, name: T) -> &mut Self
     where
-        S: Into<String>,
+        T: Into<String>,
     {
         self.name = name.into();
         self
@@ -103,7 +85,7 @@ where
 
     /// Set the SSL configuration of the server
     pub fn with_ssl(&mut self, ssl_config: SslConfig) -> Result<&mut Self, Error> {
-        self.ssl_acceptor = setup_ssl(ssl_config)?;
+        self.ssl = SslImpl::setup(ssl_config)?;
         Ok(self)
     }
 

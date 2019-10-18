@@ -56,6 +56,7 @@ impl From<io::Error> for Error {
     }
 }
 
+#[cfg(feature = "ossl")]
 impl From<ErrorStack> for Error {
     fn from(error: ErrorStack) -> Self {
         let msg = format!("{}", error);
