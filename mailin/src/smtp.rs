@@ -179,7 +179,7 @@ impl<H: Handler> Session<H> {
     /// assert_eq!(&msg, b"250 OK\r\n");
     /// ```
     pub fn process(&mut self, line: &[u8]) -> Response {
-        let response = match self.fsm.process_line(line) {
+        let response = match self.fsm.process_line(&mut self.handler, line) {
             Left(cmd) => {
                 let res = self.command(cmd);
                 self.fill_response(res)
@@ -478,5 +478,4 @@ mod tests {
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }
-
 }

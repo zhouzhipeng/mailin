@@ -43,7 +43,7 @@
 use lazy_static::lazy_static;
 use log::trace;
 use std::io;
-use std::io::{sink, Write};
+use std::io::Write;
 use std::net::IpAddr;
 mod fsm;
 mod parser;
@@ -99,11 +99,24 @@ pub trait Handler {
     }
 
     /// Called when a data command is received
-    ///
-    /// This function must return a writer and the email body will be written to
-    /// this writer.
-    fn data(&mut self, _domain: &str, _from: &str, _is8bit: bool, _to: &[String]) -> DataResult {
-        DataResult::Ok(Box::new(sink()))
+    fn data_start(
+        &mut self,
+        _domain: &str,
+        _from: &str,
+        _is8bit: bool,
+        _to: &[String],
+    ) -> DataResult {
+        DataResult::Ok
+    }
+
+    /// Called when a data buffer is received
+    fn data(&mut self, _buf: &[u8]) -> io::Result<()> {
+        Ok(())
+    }
+
+    /// Called at the end of receiving data
+    fn data_end(&mut self) -> DataResult {
+        DataResult::Ok
     }
 
     /// Called when a plain authentication request is received
@@ -342,8 +355,8 @@ impl From<RcptResult> for Response {
 
 /// `DataResult` is the result of an smtp DATA command
 pub enum DataResult {
-    /// Message accepted, write bytes to Writer
-    Ok(Box<dyn Write>),
+    /// Message accepted, ready to write
+    Ok,
     /// Internal server error
     InternalError,
     /// Transaction failed
@@ -355,10 +368,10 @@ pub enum DataResult {
 impl From<DataResult> for Response {
     fn from(v: DataResult) -> Response {
         match v {
+            DataResult::Ok => OK.clone(),
             DataResult::InternalError => INTERNAL_ERROR.clone(),
             DataResult::TransactionFailed => TRANSACTION_FAILED.clone(),
             DataResult::NoService => NO_SERVICE.clone(),
-            _ => unreachable!(),
         }
     }
 }
@@ -416,11 +429,14 @@ mod tests {
         to: Vec<String>,
         is8bit: bool,
         expected_data: Vec<u8>,
+        cursor: Cursor<Vec<u8>>,
         // Booleans set when callbacks are successful
         helo_called: bool,
         mail_called: bool,
         rcpt_called: bool,
+        data_start_called: bool,
         data_called: bool,
+        data_end_called: bool,
     }
 
     impl<'a> Handler for &'a mut TestHandler {
@@ -448,40 +464,32 @@ mod tests {
             RcptResult::Ok
         }
 
-        // Called to write an email message to a writer
-        fn data(&mut self, domain: &str, from: &str, is8bit: bool, to: &[String]) -> DataResult {
+        // Called to start writing an email message to a writer
+        fn data_start(
+            &mut self,
+            domain: &str,
+            from: &str,
+            is8bit: bool,
+            to: &[String],
+        ) -> DataResult {
             assert_eq!(self.domain, domain);
             assert_eq!(self.from, from);
             assert_eq!(self.to, to);
             assert_eq!(self.is8bit, is8bit);
+            self.data_start_called = true;
+            DataResult::Ok
+        }
+
+        fn data(&mut self, buf: &[u8]) -> io::Result<()> {
             self.data_called = true;
-            let test_writer = TestWriter {
-                expected_data: self.expected_data.clone(),
-                cursor: Cursor::new(Vec::with_capacity(80)),
-            };
-            DataResult::Ok(Box::new(test_writer))
-        }
-    }
-
-    struct TestWriter {
-        expected_data: Vec<u8>,
-        cursor: Cursor<Vec<u8>>,
-    }
-
-    impl Write for TestWriter {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            self.cursor.write(buf)
+            self.cursor.write(buf).map(|_| ())
         }
 
-        fn flush(&mut self) -> io::Result<()> {
-            self.cursor.flush()
-        }
-    }
-
-    impl Drop for TestWriter {
-        fn drop(&mut self) {
+        fn data_end(&mut self) -> DataResult {
+            self.data_end_called = true;
             let actual_data = self.cursor.get_ref();
             assert_eq!(actual_data, &self.expected_data);
+            DataResult::Ok
         }
     }
 
@@ -506,10 +514,13 @@ mod tests {
             to: to.clone(),
             is8bit: true,
             expected_data,
+            cursor: Cursor::new(Vec::with_capacity(80)),
             helo_called: false,
             mail_called: false,
             rcpt_called: false,
             data_called: false,
+            data_start_called: false,
+            data_end_called: false,
         };
         let mut session =
             smtp::SessionBuilder::new("server.domain").build(ip.clone(), &mut handler);

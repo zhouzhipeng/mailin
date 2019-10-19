@@ -11,7 +11,6 @@ use crate::{
 use either::*;
 use log::{error, trace};
 use std::borrow::BorrowMut;
-use std::io::{sink, Write};
 use std::net::IpAddr;
 use ternop::ternary;
 
@@ -56,7 +55,11 @@ trait State {
     // Most state will convert an input line into a command.
     // Some states, e.g Data, need to process input lines differently and will
     // override this method.
-    fn process_line<'a>(self: &mut Self, line: &'a [u8]) -> Either<Cmd<'a>, Response> {
+    fn process_line<'a>(
+        self: &mut Self,
+        _handler: &mut dyn Handler,
+        line: &'a [u8],
+    ) -> Either<Cmd<'a>, Response> {
         trace!("> {}", String::from_utf8_lossy(line));
         parse(line).map(Left).unwrap_or_else(Right)
     }
@@ -354,7 +357,11 @@ impl State for Auth {
         }
     }
 
-    fn process_line<'a>(self: &mut Self, line: &'a [u8]) -> Either<Cmd<'a>, Response> {
+    fn process_line<'a>(
+        self: &mut Self,
+        _handler: &mut dyn Handler,
+        line: &'a [u8],
+    ) -> Either<Cmd<'a>, Response> {
         trace!("> {}", String::from_utf8_lossy(line));
         parse_auth_response(line)
             .map(|r| Left(Cmd::AuthResponse { response: r }))
@@ -424,21 +431,16 @@ impl State for Rcpt {
     ) -> (Response, Option<Box<dyn State>>) {
         match cmd {
             Cmd::Data => {
-                let (res, writer) = match handler.data(
+                let res = match handler.data_start(
                     &self.domain,
                     &self.reverse_path,
                     self.is8bit,
                     &self.forward_path,
                 ) {
-                    DataResult::Ok(w) => (START_DATA.clone(), w),
-                    r => (Response::from(r), Box::new(sink()) as Box<dyn Write>),
+                    DataResult::Ok => START_DATA.clone(),
+                    r => Response::from(r),
                 };
-                transform_state(self, res, |s| {
-                    Box::new(Data {
-                        domain: s.domain,
-                        writer,
-                    })
-                })
+                transform_state(self, res, |s| Box::new(Data { domain: s.domain }))
             }
             Cmd::Rcpt { forward_path } => {
                 let res = Response::from(handler.rcpt(forward_path));
@@ -463,7 +465,6 @@ impl State for Rcpt {
 
 struct Data {
     domain: String,
-    writer: Box<dyn Write>,
 }
 
 impl State for Data {
@@ -475,26 +476,32 @@ impl State for Data {
     fn handle(
         self: Box<Self>,
         _fsm: &mut StateMachine,
-        _handler: &mut dyn Handler,
+        handler: &mut dyn Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<dyn State>>) {
         match cmd {
-            Cmd::DataEnd => (
-                OK.clone(),
-                Some(Box::new(Hello {
-                    domain: self.domain.clone(),
-                })),
-            ),
+            Cmd::DataEnd => {
+                let res = Response::from(handler.data_end());
+                transform_state(self, res, |s| {
+                    Box::new(Hello {
+                        domain: s.domain.clone(),
+                    })
+                })
+            }
             _ => unhandled(self),
         }
     }
 
-    fn process_line<'a>(self: &mut Self, line: &'a [u8]) -> Either<Cmd<'a>, Response> {
+    fn process_line<'a>(
+        self: &mut Self,
+        handler: &mut dyn Handler,
+        line: &'a [u8],
+    ) -> Either<Cmd<'a>, Response> {
         if line == b".\r\n" {
             trace!("> _data_");
             Left(Cmd::DataEnd)
         } else {
-            match self.writer.write_all(line) {
+            match handler.data(line) {
                 Ok(_) => Right(EMPTY_RESPONSE.clone()),
                 Err(e) => {
                     error!("Error saving message: {}", e);
@@ -547,11 +554,15 @@ impl StateMachine {
         response
     }
 
-    pub fn process_line<'a>(&mut self, line: &'a [u8]) -> Either<Cmd<'a>, Response> {
+    pub fn process_line<'a>(
+        &mut self,
+        handler: &mut dyn Handler,
+        line: &'a [u8],
+    ) -> Either<Cmd<'a>, Response> {
         match self.smtp {
             Some(ref mut s) => {
                 let s: &mut dyn State = s.borrow_mut();
-                s.process_line(line)
+                s.process_line(handler, line)
             }
             None => Right(INVALID_STATE.clone()),
         }
