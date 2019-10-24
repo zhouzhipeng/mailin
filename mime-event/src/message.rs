@@ -3,7 +3,12 @@ use crate::event::Mime;
 use std::collections::HashMap;
 use std::fmt;
 
-/// A simplified Email Message overview
+/// A simplified Email Message overview.
+///
+/// A Message contains accessors for Parts of the Message such as
+/// `top()`, `text()` and `html()`. Accessors can return the same
+/// Part. For instance, both `top()` and `text()` may return the first
+/// text part of the message.
 #[derive(Default, Debug)]
 pub struct Message {
     // Most fields are indices into the parts Vec
@@ -16,7 +21,10 @@ pub struct Message {
     pub(crate) parts: Vec<Part>,
 }
 
-/// A part of an email message
+/// A part of an email message.
+///
+/// A MIME Part is like a message within a message. It has a header,
+/// content-type and body.
 #[derive(Default, Debug)]
 pub struct Part {
     /// Mail header
