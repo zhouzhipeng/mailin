@@ -355,9 +355,9 @@ mod tests {
 
     fn blocklists() -> Vec<(&'static str, bool)> {
         // Tuples are (fqdn, has_nameserver)
+        // Removed:  ("dnsrbl.org.", true),
         vec![
             ("zen.spamhaus.org.", true),
-            ("dnsrbl.org.", true),
             ("bl.spamcop.net.", false),
             ("dnsbl-1.uceprotect.net.", true),
             ("pbsl.surriel.com.", false),
