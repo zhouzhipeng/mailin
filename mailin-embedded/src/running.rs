@@ -1,7 +1,7 @@
 use crate::err::Error;
 #[cfg(feature = "ossl")]
 use crate::ossl::SslImpl;
-use crate::ssl::{Ssl, Stream};
+use crate::ssl::Stream;
 use crate::Server;
 use bufstream::BufStream;
 use lazy_static::lazy_static;
@@ -121,7 +121,7 @@ fn write_response(mut writer: &mut dyn Write, res: &Response) -> Result<(), Erro
         .map_err(|e| Error::with_source("Cannot write response", e))
 }
 
-fn upgrade_tls(stream: TcpStream, ssl: Option<SslImpl>) -> Result<Box<dyn Stream>, Error> {
+fn upgrade_tls(stream: TcpStream, ssl: Option<SslImpl>) -> Result<impl Stream, Error> {
     if let Some(acceptor) = ssl {
         let ret = acceptor.accept(stream)?;
         Ok(ret)

@@ -1,4 +1,4 @@
-use crate::ssl::{Ssl, SslConfig, Stream};
+use crate::ssl::{SslConfig, Stream};
 use crate::utils::slurp;
 use crate::Error;
 use openssl;
@@ -16,8 +16,8 @@ pub struct SslImpl {
 
 impl Stream for SslStream<TcpStream> {}
 
-impl Ssl for SslImpl {
-    fn setup(ssl_config: SslConfig) -> Result<Option<Self>, Error> {
+impl SslImpl {
+    pub fn setup(ssl_config: SslConfig) -> Result<Option<Self>, Error> {
         let builder = match ssl_config {
             SslConfig::Trusted {
                 cert_path,
@@ -47,12 +47,12 @@ impl Ssl for SslImpl {
         Ok(ssl)
     }
 
-    fn accept(&self, stream: TcpStream) -> Result<Box<dyn Stream>, Error> {
+    pub fn accept(&self, stream: TcpStream) -> Result<impl Stream, Error> {
         let ret = self
             .acceptor
             .accept(stream)
             .map_err(|e| Error::with_source("Cannot upgrade to TLS", e))?;
-        Ok(Box::new(ret))
+        Ok(ret)
     }
 }
 

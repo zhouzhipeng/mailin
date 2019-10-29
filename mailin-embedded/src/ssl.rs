@@ -1,6 +1,4 @@
-use crate::Error;
 use std::io::{Read, Write};
-use std::net::TcpStream;
 
 /// `SslConfig` is used to configure the STARTTLS configuration of the server
 pub enum SslConfig {
@@ -25,8 +23,3 @@ pub enum SslConfig {
 }
 
 pub trait Stream: Read + Write {}
-
-pub trait Ssl: Sized + Clone {
-    fn setup(ssl_config: SslConfig) -> Result<Option<Self>, Error>;
-    fn accept(&self, stream: TcpStream) -> Result<Box<dyn Stream>, Error>;
-}

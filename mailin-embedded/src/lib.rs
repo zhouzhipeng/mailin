@@ -36,7 +36,6 @@ mod utils;
 use crate::err::Error;
 #[cfg(feature = "ossl")]
 use crate::ossl::SslImpl;
-use crate::ssl::Ssl;
 pub use crate::ssl::SslConfig;
 pub use mailin::{
     AuthMechanism, AuthResult, DataResult, Handler, HeloResult, MailResult, RcptResult,
