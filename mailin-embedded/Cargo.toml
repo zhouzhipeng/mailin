@@ -12,7 +12,7 @@ license = "MIT OR Apache-2.0"
 edition = "2018"
 
 [features]
-default=["ossl"]
+default=["rtls"]
 ossl=["openssl"]
 rtls=["rustls"]
 

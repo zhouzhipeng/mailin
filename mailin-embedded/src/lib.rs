@@ -29,13 +29,16 @@ pub mod err;
 
 #[cfg(feature = "ossl")]
 mod ossl;
+#[cfg(feature = "rtls")]
+mod rtls;
 mod running;
 mod ssl;
-mod utils;
 
 use crate::err::Error;
 #[cfg(feature = "ossl")]
 use crate::ossl::SslImpl;
+#[cfg(feature = "rtls")]
+use crate::rtls::SslImpl;
 pub use crate::ssl::SslConfig;
 pub use mailin::{
     AuthMechanism, AuthResult, DataResult, Handler, HeloResult, MailResult, RcptResult,

@@ -1,17 +1,28 @@
 use crate::ssl::{SslConfig, Stream};
-use crate::utils::slurp;
 use crate::Error;
 use openssl;
+use openssl::error::ErrorStack;
 use openssl::pkey::PKey;
 use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslMethod, SslStream};
 use openssl::x509::X509;
+use std::fmt::Display;
+use std::fs::File;
+use std::io::Read;
 use std::net::TcpStream;
+use std::path::Path;
 use std::sync::Arc;
 
 // Openssl wrapper
 #[derive(Clone)]
 pub struct SslImpl {
     acceptor: Arc<SslAcceptor>,
+}
+
+impl From<ErrorStack> for Error {
+    fn from(error: ErrorStack) -> Self {
+        let msg = format!("{}", error);
+        Error::with_source(msg, error)
+    }
 }
 
 impl Stream for SslStream<TcpStream> {}
@@ -66,4 +77,15 @@ fn ssl_builder(cert_path: String, key_path: String) -> Result<SslAcceptorBuilder
     builder.set_certificate(&cert)?;
     builder.check_private_key()?;
     Ok(builder)
+}
+
+pub fn slurp<P>(path: P) -> Result<Vec<u8>, Error>
+where
+    P: AsRef<Path> + Display,
+{
+    let mut file =
+        File::open(&path).map_err(|e| Error::with_source(format!("Cannot open {}", path), e))?;
+    let mut ret = Vec::with_capacity(1024);
+    file.read_to_end(&mut ret)?;
+    Ok(ret)
 }

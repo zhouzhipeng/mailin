@@ -1,6 +1,8 @@
 use crate::err::Error;
 #[cfg(feature = "ossl")]
 use crate::ossl::SslImpl;
+#[cfg(feature = "rtls")]
+use crate::rtls::SslImpl;
 use crate::ssl::Stream;
 use crate::Server;
 use bufstream::BufStream;

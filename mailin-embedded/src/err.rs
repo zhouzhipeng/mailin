@@ -1,4 +1,3 @@
-use openssl::error::ErrorStack;
 use std::error;
 use std::fmt;
 use std::io;
@@ -48,17 +47,6 @@ impl fmt::Display for Error {
 
 impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
-        let msg = format!("{}", error);
-        Self {
-            original: Some(Box::new(error)),
-            msg,
-        }
-    }
-}
-
-#[cfg(feature = "ossl")]
-impl From<ErrorStack> for Error {
-    fn from(error: ErrorStack) -> Self {
         let msg = format!("{}", error);
         Self {
             original: Some(Box::new(error)),
