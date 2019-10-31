@@ -5,7 +5,7 @@ authors = ["alienscience <saul@alienscience.org.uk>"]
 edition = "2018"
 
 [dependencies]
-mailin-embedded = { path="../mailin-embedded" }
+mailin-embedded = { features=["rtls"], path="../mailin-embedded" }
 mxdns = { path="../mxdns" }
 mime-event = { path="../mime-event" }
 log = "0.4"
