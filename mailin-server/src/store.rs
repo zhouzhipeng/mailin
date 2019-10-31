@@ -1,49 +1,100 @@
 use log::info;
 use mime_event::MessageParser;
+use std::fmt::Debug;
+use std::fs;
+use std::fs::File;
 use std::io;
-use std::io::{Sink, Write};
+use std::io::{BufWriter, Write};
+use std::path::PathBuf;
+use std::process;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use std::time::SystemTime;
 
 pub struct MailStore {
-    parser: Option<MessageParser<Sink>>,
+    dir: PathBuf,
+    counter: Arc<AtomicU32>,
+    state: Option<State>,
+}
+
+struct State {
+    parser: MessageParser<BufWriter<File>>,
 }
 
 impl Clone for MailStore {
     fn clone(&self) -> Self {
-        Self { parser: None }
+        Self {
+            dir: self.dir.clone(),
+            counter: self.counter.clone(),
+            state: None,
+        }
     }
 }
 
 impl MailStore {
-    pub fn new() -> Self {
-        Self { parser: None }
+    pub fn new<P>(dir: P) -> Self
+    where
+        P: Into<PathBuf> + Debug,
+    {
+        Self {
+            dir: dir.into(),
+            counter: Arc::new(AtomicU32::new(0)),
+            state: None,
+        }
     }
 
-    pub fn start_message(&mut self, _message_id: &[u8]) -> io::Result<()> {
-        self.parser.replace(MessageParser::new(io::sink()));
+    pub fn start_message(&mut self) -> io::Result<()> {
+        let mut path = self.dir.clone();
+        path.push("tmp");
+        fs::create_dir_all(&path)?;
+        let message_file = self.message_file();
+        path.push(message_file);
+        info!("Writing message to {:#?}", path);
+        let file = File::create(&path)?;
+        let writer = BufWriter::new(file);
+        self.state.replace(State {
+            parser: MessageParser::new(writer),
+        });
         Ok(())
     }
 
     pub fn end_message(&mut self) -> io::Result<()> {
-        self.parser
+        self.state
             .take()
-            .map(|p| {
-                let message = p.end();
+            .map(|state| {
+                let message = state.parser.end();
                 info!("{:#?}", message);
                 Ok(())
             })
             .unwrap_or(Ok(()))
     }
+
+    fn message_file(&self) -> String {
+        let mut filename = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_millis().to_string())
+            .unwrap_or("0000".to_string());
+        filename.push_str(".");
+        filename.push_str(&process::id().to_string());
+        filename.push_str(".");
+        let count = self.counter.fetch_add(1, Ordering::Relaxed);
+        filename.push_str(&count.to_string());
+        filename
+    }
 }
 
 impl Write for MailStore {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.parser
+        self.state
             .as_mut()
-            .map(|p| p.write(buf))
+            .map(|state| state.parser.write(buf))
             .unwrap_or_else(|| Ok(buf.len()))
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.parser.as_mut().map(|p| p.flush()).unwrap_or(Ok(()))
+        self.state
+            .as_mut()
+            .map(|state| state.parser.flush())
+            .unwrap_or(Ok(()))
     }
 }
