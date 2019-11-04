@@ -5,7 +5,7 @@ use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -18,6 +18,7 @@ pub struct MailStore {
 }
 
 struct State {
+    path: PathBuf,
     parser: MessageParser<BufWriter<File>>,
 }
 
@@ -53,6 +54,7 @@ impl MailStore {
         let file = File::create(&path)?;
         let writer = BufWriter::new(file);
         self.state.replace(State {
+            path,
             parser: MessageParser::new(writer),
         });
         Ok(())
@@ -64,7 +66,7 @@ impl MailStore {
             .map(|state| {
                 let message = state.parser.end();
                 info!("{:#?}", message);
-                Ok(())
+                commit_message(&state.path)
             })
             .unwrap_or(Ok(()))
     }
@@ -97,4 +99,15 @@ impl Write for MailStore {
             .map(|state| state.parser.flush())
             .unwrap_or(Ok(()))
     }
+}
+
+fn commit_message(tmp_path: &Path) -> io::Result<()> {
+    let filename = tmp_path.file_name().ok_or(io::ErrorKind::InvalidInput)?;
+    let mut dest = tmp_path.to_path_buf();
+    dest.pop();
+    dest.pop();
+    dest.push("new");
+    fs::create_dir_all(&dest)?;
+    dest.push(filename);
+    fs::rename(tmp_path, dest)
 }
