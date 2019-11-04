@@ -1,5 +1,5 @@
 use log::info;
-use mime_event::MessageParser;
+use mime_event::{Message, MessageParser};
 use std::fmt::Debug;
 use std::fs;
 use std::fs::File;
@@ -10,11 +10,19 @@ use std::process;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::SystemTime;
+use tantivy::schema::Field;
+use tantivy::{doc, IndexWriter, TantivyError};
 
 pub struct MailStore {
     dir: PathBuf,
     counter: Arc<AtomicU32>,
+    index: Arc<Index>,
     state: Option<State>,
+}
+
+struct Index {
+    subject: Field,
+    writer: IndexWriter,
 }
 
 struct State {
@@ -27,6 +35,7 @@ impl Clone for MailStore {
         Self {
             dir: self.dir.clone(),
             counter: self.counter.clone(),
+            index: self.index.clone(),
             state: None,
         }
     }
@@ -40,6 +49,7 @@ impl MailStore {
         Self {
             dir: dir.into(),
             counter: Arc::new(AtomicU32::new(0)),
+            index: Arc::new(create_index()),
             state: None,
         }
     }
@@ -66,7 +76,8 @@ impl MailStore {
             .map(|state| {
                 let message = state.parser.end();
                 info!("{:#?}", message);
-                commit_message(&state.path)
+                let dest = commit_file(&state.path)?;
+                self.commit_index(&dest, &message).map(|_| ())
             })
             .unwrap_or(Ok(()))
     }
@@ -82,6 +93,20 @@ impl MailStore {
         let count = self.counter.fetch_add(1, Ordering::Relaxed);
         filename.push_str(&count.to_string());
         filename
+    }
+
+    fn commit_index(&self, dest: &Path, message: &Message) -> io::Result<u64> {
+        let top = message.top().ok_or(io::ErrorKind::InvalidData)?;
+        let subject = top
+            .header
+            .subject
+            .as_ref()
+            .ok_or(io::ErrorKind::InvalidData)
+            .map(|s| String::from_utf8_lossy(s))?;
+        self.index.writer.add_document(doc!(
+            self.index.subject => subject.as_ref(),
+        ));
+        self.index.writer.commit().map_err(convert_err)
     }
 }
 
@@ -101,7 +126,7 @@ impl Write for MailStore {
     }
 }
 
-fn commit_message(tmp_path: &Path) -> io::Result<()> {
+fn commit_file(tmp_path: &Path) -> io::Result<PathBuf> {
     let filename = tmp_path.file_name().ok_or(io::ErrorKind::InvalidInput)?;
     let mut dest = tmp_path.to_path_buf();
     dest.pop();
@@ -109,5 +134,16 @@ fn commit_message(tmp_path: &Path) -> io::Result<()> {
     dest.push("new");
     fs::create_dir_all(&dest)?;
     dest.push(filename);
-    fs::rename(tmp_path, dest)
+    fs::rename(tmp_path, dest)?;
+    Ok(dest)
+}
+
+fn convert_err(tantivy_err: TantivyError) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, Box::new(tantivy_err).into())
+}
+
+fn create_index(dir: &Path) -> Index {
+    let mut builder = Schema::builder();
+    let schema = builder.build();
+    let idx = tantivy::Index::create_in_dir(dir, schema);
 }
