@@ -10,7 +10,7 @@ use std::process;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::SystemTime;
-use tantivy::schema::Field;
+use tantivy::schema::{Field, Schema, STORED, TEXT};
 use tantivy::{doc, IndexWriter, TantivyError};
 
 pub struct MailStore {
@@ -46,10 +46,12 @@ impl MailStore {
     where
         P: Into<PathBuf> + Debug,
     {
+        let dir = dir.into();
+        let index = create_index(&dir);
         Self {
-            dir: dir.into(),
+            dir,
             counter: Arc::new(AtomicU32::new(0)),
-            index: Arc::new(create_index()),
+            index: Arc::new(create_index(&dir)),
             state: None,
         }
     }
@@ -142,8 +144,11 @@ fn convert_err(tantivy_err: TantivyError) -> io::Error {
     io::Error::new(io::ErrorKind::Other, Box::new(tantivy_err).into())
 }
 
-fn create_index(dir: &Path) -> Index {
+fn create_index(dir: &Path) -> Result<Index, failure::Error> {
     let mut builder = Schema::builder();
+    let subject = builder.add_text_field("subject", TEXT | STORED);
     let schema = builder.build();
-    let idx = tantivy::Index::create_in_dir(dir, schema);
+    let index = tantivy::Index::create_in_dir(dir, schema)?;
+    let writer = index.writer(4 * 1024 * 1024)?;
+    Ok(Index { subject, writer })
 }
