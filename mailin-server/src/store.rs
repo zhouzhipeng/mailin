@@ -1,3 +1,4 @@
+use failure::Fail;
 use log::info;
 use mime_event::{Message, MessageParser};
 use std::fmt::Debug;
@@ -8,10 +9,10 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 use tantivy::schema::{Field, Schema, STORED, TEXT};
-use tantivy::{doc, IndexWriter, TantivyError};
+use tantivy::{doc, IndexWriter};
 
 pub struct MailStore {
     dir: PathBuf,
@@ -22,7 +23,7 @@ pub struct MailStore {
 
 struct Index {
     subject: Field,
-    writer: IndexWriter,
+    writer: RwLock<IndexWriter>,
 }
 
 struct State {
@@ -42,18 +43,18 @@ impl Clone for MailStore {
 }
 
 impl MailStore {
-    pub fn new<P>(dir: P) -> Self
+    pub fn new<P>(dir: P) -> Result<Self, failure::Error>
     where
         P: Into<PathBuf> + Debug,
     {
         let dir = dir.into();
-        let index = create_index(&dir);
-        Self {
+        let index = create_index(&dir)?;
+        Ok(Self {
             dir,
             counter: Arc::new(AtomicU32::new(0)),
-            index: Arc::new(create_index(&dir)),
+            index: Arc::new(index),
             state: None,
-        }
+        })
     }
 
     pub fn start_message(&mut self) -> io::Result<()> {
@@ -97,7 +98,7 @@ impl MailStore {
         filename
     }
 
-    fn commit_index(&self, dest: &Path, message: &Message) -> io::Result<u64> {
+    fn commit_index(&self, _dest: &Path, message: &Message) -> io::Result<u64> {
         let top = message.top().ok_or(io::ErrorKind::InvalidData)?;
         let subject = top
             .header
@@ -105,10 +106,12 @@ impl MailStore {
             .as_ref()
             .ok_or(io::ErrorKind::InvalidData)
             .map(|s| String::from_utf8_lossy(s))?;
-        self.index.writer.add_document(doc!(
+        let writer = self.index.writer.read().map_err(nonsync_err)?;
+        writer.add_document(doc!(
             self.index.subject => subject.as_ref(),
         ));
-        self.index.writer.commit().map_err(convert_err)
+        let mut writer = self.index.writer.write().map_err(nonsync_err)?;
+        writer.commit().map_err(convert_failure)
     }
 }
 
@@ -136,12 +139,25 @@ fn commit_file(tmp_path: &Path) -> io::Result<PathBuf> {
     dest.push("new");
     fs::create_dir_all(&dest)?;
     dest.push(filename);
-    fs::rename(tmp_path, dest)?;
+    fs::rename(tmp_path, &dest)?;
     Ok(dest)
 }
 
-fn convert_err(tantivy_err: TantivyError) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, Box::new(tantivy_err).into())
+// Convert an error that is not Sync into an io::Error
+fn nonsync_err<E>(error: E) -> io::Error
+where
+    E: std::error::Error,
+{
+    let msg = format!("{}", error);
+    // Use the ::from() provided by Box
+    let error = Box::<dyn std::error::Error + Send + Sync>::from(msg);
+    io::Error::new(io::ErrorKind::Other, error)
+}
+
+// Convert a failure::Fail into an io::Error
+fn convert_failure<F: Fail>(fail: F) -> io::Error {
+    let error = fail.compat();
+    io::Error::new(io::ErrorKind::Other, Box::new(error))
 }
 
 fn create_index(dir: &Path) -> Result<Index, failure::Error> {
@@ -150,5 +166,6 @@ fn create_index(dir: &Path) -> Result<Index, failure::Error> {
     let schema = builder.build();
     let index = tantivy::Index::create_in_dir(dir, schema)?;
     let writer = index.writer(4 * 1024 * 1024)?;
+    let writer = RwLock::new(writer);
     Ok(Index { subject, writer })
 }

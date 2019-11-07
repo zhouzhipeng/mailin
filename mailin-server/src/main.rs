@@ -194,7 +194,7 @@ fn main() -> Result<(), Error> {
     let handler = Handler {
         mxdns: &mxdns,
         statsd: statsd.as_ref(),
-        mailstore: MailStore::new(&maildir),
+        mailstore: MailStore::new(&maildir)?,
     };
     let mut server = Server::new(handler);
     server
