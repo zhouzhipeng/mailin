@@ -1,3 +1,4 @@
+mod err;
 mod store;
 
 use crate::store::MailStore;

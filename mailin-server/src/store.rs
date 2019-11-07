@@ -1,4 +1,4 @@
-use failure::Fail;
+use crate::err::{convert_failure, nonsync_err};
 use log::info;
 use mime_event::{Message, MessageParser};
 use std::fmt::Debug;
@@ -9,8 +9,9 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use tantivy::directory::MmapDirectory;
 use tantivy::schema::{Field, Schema, STORED, TEXT};
 use tantivy::{doc, IndexWriter};
 
@@ -23,7 +24,7 @@ pub struct MailStore {
 
 struct Index {
     subject: Field,
-    writer: RwLock<IndexWriter>,
+    writer: Mutex<IndexWriter>,
 }
 
 struct State {
@@ -106,11 +107,10 @@ impl MailStore {
             .as_ref()
             .ok_or(io::ErrorKind::InvalidData)
             .map(|s| String::from_utf8_lossy(s))?;
-        let writer = self.index.writer.read().map_err(nonsync_err)?;
+        let mut writer = self.index.writer.lock().map_err(nonsync_err)?;
         writer.add_document(doc!(
             self.index.subject => subject.as_ref(),
         ));
-        let mut writer = self.index.writer.write().map_err(nonsync_err)?;
         writer.commit().map_err(convert_failure)
     }
 }
@@ -143,29 +143,13 @@ fn commit_file(tmp_path: &Path) -> io::Result<PathBuf> {
     Ok(dest)
 }
 
-// Convert an error that is not Sync into an io::Error
-fn nonsync_err<E>(error: E) -> io::Error
-where
-    E: std::error::Error,
-{
-    let msg = format!("{}", error);
-    // Use the ::from() provided by Box
-    let error = Box::<dyn std::error::Error + Send + Sync>::from(msg);
-    io::Error::new(io::ErrorKind::Other, error)
-}
-
-// Convert a failure::Fail into an io::Error
-fn convert_failure<F: Fail>(fail: F) -> io::Error {
-    let error = fail.compat();
-    io::Error::new(io::ErrorKind::Other, Box::new(error))
-}
-
 fn create_index(dir: &Path) -> Result<Index, failure::Error> {
     let mut builder = Schema::builder();
     let subject = builder.add_text_field("subject", TEXT | STORED);
     let schema = builder.build();
-    let index = tantivy::Index::create_in_dir(dir, schema)?;
+    let dir = MmapDirectory::open(dir)?;
+    let index = tantivy::Index::open_or_create(dir, schema)?;
     let writer = index.writer(4 * 1024 * 1024)?;
-    let writer = RwLock::new(writer);
+    let writer = Mutex::new(writer);
     Ok(Index { subject, writer })
 }
