@@ -1,6 +1,7 @@
 use crate::err::{convert_failure, nonsync_err};
 use log::info;
 use mime_event::{Message, MessageParser};
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fs;
 use std::fs::File;
@@ -23,7 +24,10 @@ pub struct MailStore {
 }
 
 struct Index {
+    from: Field,
+    to: Field,
     subject: Field,
+    date: Field,
     writer: Mutex<IndexWriter>,
 }
 
@@ -101,15 +105,17 @@ impl MailStore {
 
     fn commit_index(&self, _dest: &Path, message: &Message) -> io::Result<u64> {
         let top = message.top().ok_or(io::ErrorKind::InvalidData)?;
-        let subject = top
-            .header
-            .subject
-            .as_ref()
-            .ok_or(io::ErrorKind::InvalidData)
-            .map(|s| String::from_utf8_lossy(s))?;
+        let header = &top.header;
+        let from = get_header(&header.from)?;
+        let to = get_header(&header.to)?;
+        let subject = get_header(&header.subject)?;
+        let date = get_header(&header.date)?;
         let mut writer = self.index.writer.lock().map_err(nonsync_err)?;
         writer.add_document(doc!(
+            self.index.from => from.as_ref(),
+            self.index.to => to.as_ref(),
             self.index.subject => subject.as_ref(),
+            self.index.date => date.as_ref(),
         ));
         writer.commit().map_err(convert_failure)
     }
@@ -145,11 +151,27 @@ fn commit_file(tmp_path: &Path) -> io::Result<PathBuf> {
 
 fn create_index(dir: &Path) -> Result<Index, failure::Error> {
     let mut builder = Schema::builder();
+    let from = builder.add_text_field("from", TEXT | STORED);
+    let to = builder.add_text_field("to", TEXT | STORED);
     let subject = builder.add_text_field("subject", TEXT | STORED);
+    let date = builder.add_date_field("date", STORED);
     let schema = builder.build();
     let dir = MmapDirectory::open(dir)?;
     let index = tantivy::Index::open_or_create(dir, schema)?;
     let writer = index.writer(4 * 1024 * 1024)?;
     let writer = Mutex::new(writer);
-    Ok(Index { subject, writer })
+    Ok(Index {
+        from,
+        to,
+        subject,
+        date,
+        writer,
+    })
+}
+
+fn get_header(field: &Option<Vec<u8>>) -> Result<Cow<'_, str>, io::Error> {
+    field
+        .as_ref()
+        .ok_or(io::ErrorKind::InvalidData.into())
+        .map(|s| String::from_utf8_lossy(s))
 }
