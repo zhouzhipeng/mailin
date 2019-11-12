@@ -19,3 +19,6 @@ log = "0.4"
 base64 = "0.10"
 ternop = "1.0"
 either = "1.5"
+
+[dev-dependencies]
+matches = "0.1"

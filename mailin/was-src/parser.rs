@@ -6,8 +6,8 @@ use nom::combinator::{map, map_res, value};
 use nom::sequence::{pair, preceded, separated_pair, terminated};
 use nom::IResult;
 
-use crate::cmd::{Cmd, Credentials};
-use crate::response::{Response, MISSING_PARAMETER, SYNTAX_ERROR};
+use crate::smtp::{Cmd, Credentials, MISSING_PARAMETER, SYNTAX_ERROR};
+use crate::Response;
 use std::str;
 
 //----- Parser -----------------------------------------------------------------
@@ -15,9 +15,9 @@ use std::str;
 // Parse a line from the client
 pub fn parse(line: &[u8]) -> Result<Cmd, Response> {
     command(line).map(|r| r.1).map_err(|e| match e {
-        nom::Err::Incomplete(_) => MISSING_PARAMETER,
-        nom::Err::Error(_) => SYNTAX_ERROR,
-        nom::Err::Failure(_) => SYNTAX_ERROR,
+        nom::Err::Incomplete(_) => MISSING_PARAMETER.clone(),
+        nom::Err::Error(_) => SYNTAX_ERROR.clone(),
+        nom::Err::Failure(_) => SYNTAX_ERROR.clone(),
     })
 }
 
@@ -227,4 +227,5 @@ mod tests {
             ),
         };
     }
+
 }
