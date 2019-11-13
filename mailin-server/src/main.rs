@@ -37,6 +37,7 @@ const OPT_USER: &str = "user";
 const OPT_GROUP: &str = "group";
 const OPT_STATSD_SERVER: &str = "statsd-server";
 const OPT_STATSD_PREFIX: &str = "statsd-prefix";
+const OPT_MAILDIR: &str = "maildir";
 
 #[derive(Clone)]
 struct Handler<'a> {
@@ -73,7 +74,7 @@ impl<'a> mailin_embedded::Handler for Handler<'a> {
         _is8bit: bool,
         _to: &[String],
     ) -> DataResult {
-        match self.mailstore.start_message(b"some_id") {
+        match self.mailstore.start_message() {
             Ok(()) => DataResult::Ok,
             Err(_) => DataResult::InternalError,
         }
@@ -160,6 +161,7 @@ fn main() -> Result<(), Error> {
         "the prefix of the statsd stats",
         "PREFIX",
     );
+    opts.optopt("", OPT_MAILDIR, "the directory to store mail in", "MAILDIR");
     let matches = opts
         .parse(&args[1..])
         .map_err(|err| format_err!("Error parsing command line: {}", err))?;
@@ -186,10 +188,13 @@ fn main() -> Result<(), Error> {
         .opt_str(OPT_STATSD_SERVER)
         .map(|addr| statsd::Client::new(addr, &statsd_prefix))
         .transpose()?;
+    let maildir = matches
+        .opt_str(OPT_MAILDIR)
+        .unwrap_or_else(|| "mail".to_owned());
     let handler = Handler {
         mxdns: &mxdns,
         statsd: statsd.as_ref(),
-        mailstore: MailStore::new(),
+        mailstore: MailStore::new(&maildir),
     };
     let mut server = Server::new(handler);
     server
