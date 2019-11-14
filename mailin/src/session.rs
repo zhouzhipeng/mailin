@@ -4,7 +4,7 @@ use crate::response::{Response, BAD_SEQUENCE_COMMANDS, INVALID_STATE, OK};
 use crate::state::{Hello, Idle, Mail, State};
 use std::net::IpAddr;
 
-pub struct Smtp {
+pub struct Session {
     state: Option<State>,
 }
 
@@ -14,7 +14,7 @@ pub enum Event {
     SendReponse(Response),
 }
 
-impl Smtp {
+impl Session {
     pub fn new(ip: IpAddr) -> Self {
         Self {
             state: Some(State::Idle(Idle { ip })),
@@ -99,50 +99,50 @@ mod tests {
 
     #[test]
     fn helo_ehlo() {
-        let mut smtp = Smtp::new("127.0.0.1".parse().unwrap());
-        let res = match smtp.process(b"helo a.domain\r\n") {
+        let mut session = Session::new("127.0.0.1".parse().unwrap());
+        let res = match session.process(b"helo a.domain\r\n") {
             Event::ChangeState(State::Hello(hello)) => {
                 assert_eq!(hello.is_esmtp, false);
-                hello.ok(&mut smtp)
+                hello.ok(&mut session)
             }
             ev => unexpected(ev),
         };
         assert_eq!(res.code, 250);
-        assert!(matches!(smtp.state(), Some(State::Hello(Hello{is_esmtp: false, ..}))));
-        let res = match smtp.process(b"ehlo b.domain\r\n") {
+        assert!(matches!(session.state(), Some(State::Hello(Hello{is_esmtp: false, ..}))));
+        let res = match session.process(b"ehlo b.domain\r\n") {
             Event::ChangeState(State::Hello(hello)) => {
                 assert_eq!(hello.is_esmtp, true);
-                hello.ok(&mut smtp)
+                hello.ok(&mut session)
             }
             ev => unexpected(ev),
         };
         assert_eq!(res.code, 250);
-        assert!(matches!(smtp.state(), Some(State::Hello(Hello{is_esmtp: true, ..}))));
+        assert!(matches!(session.state(), Some(State::Hello(Hello{is_esmtp: true, ..}))));
     }
 
     #[test]
     fn mail_from() {
-        let mut smtp = Smtp::new("127.0.0.1".parse().unwrap());
-        let res = match smtp.process(b"helo a.domain\r\n") {
+        let mut session = Session::new("127.0.0.1".parse().unwrap());
+        let res = match session.process(b"helo a.domain\r\n") {
             Event::ChangeState(State::Hello(hello)) => {
                 assert_eq!(hello.is_esmtp, false);
-                hello.ok(&mut smtp)
+                hello.ok(&mut session)
             }
             ev => unexpected(ev),
         };
         assert_eq!(res.code, 250);
-        let res = match smtp.process(b"mail from:<ship@sea.com>\r\n") {
-            Event::ChangeState(State::Mail(mail)) => mail.ok(&mut smtp),
+        let res = match session.process(b"mail from:<ship@sea.com>\r\n") {
+            Event::ChangeState(State::Mail(mail)) => mail.ok(&mut session),
             ev => unexpected(ev),
         };
         assert_eq!(res.code, 250);
-        assert!(matches!(smtp.state(), Some(State::Mail(_))));
+        assert!(matches!(session.state(), Some(State::Mail(_))));
     }
 
     #[test]
     fn domain_badchars() {
-        let mut smtp = Smtp::new("127.0.0.1".parse().unwrap());
-        let res = smtp.process(b"helo world\x40\xff\r\n");
+        let mut session = Session::new("127.0.0.1".parse().unwrap());
+        let res = session.process(b"helo world\x40\xff\r\n");
         assert!(matches!(
             res,
             Event::SendReponse(Response { code: 500, .. })

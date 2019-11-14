@@ -1,5 +1,5 @@
 use crate::response::{Response, BAD_HELLO, NO_SERVICE, OK};
-use crate::smtp::Smtp;
+use crate::session::Session;
 use std::net::IpAddr;
 
 #[derive(Debug)]
@@ -12,10 +12,10 @@ pub enum State {
 
 /// Mark a state transition as ok to continue
 impl State {
-    pub fn ok(self, smtp: &mut Smtp) -> Response {
+    pub fn ok(self, session: &mut Session) -> Response {
         match self {
-            Self::Hello(hello) => hello.ok(smtp),
-            Self::Mail(mail) => mail.ok(smtp),
+            Self::Hello(hello) => hello.ok(session),
+            Self::Mail(mail) => mail.ok(session),
             _ => OK,
         }
     }
@@ -93,13 +93,13 @@ impl Hello {
         }
     }
 
-    pub fn ok(self, smtp: &mut Smtp) -> Response {
-        smtp.next_state(State::Hello(self));
+    pub fn ok(self, session: &mut Session) -> Response {
+        session.next_state(State::Hello(self));
         OK
     }
 
-    pub fn deny(self, smtp: &mut Smtp, _msg: &str) -> Response {
-        smtp.next_state(State::Idle(self.into()));
+    pub fn deny(self, session: &mut Session, _msg: &str) -> Response {
+        session.next_state(State::Idle(self.into()));
         BAD_HELLO
     }
 }
@@ -116,13 +116,13 @@ pub struct Mail {
 }
 
 impl Mail {
-    pub fn ok(self, smtp: &mut Smtp) -> Response {
-        smtp.next_state(State::Mail(self));
+    pub fn ok(self, session: &mut Session) -> Response {
+        session.next_state(State::Mail(self));
         OK
     }
 
-    pub fn deny(self, smtp: &mut Smtp, _msg: &str) -> Response {
-        smtp.next_state(State::Hello(self.into()));
+    pub fn deny(self, session: &mut Session, _msg: &str) -> Response {
+        session.next_state(State::Hello(self.into()));
         NO_SERVICE
     }
 
