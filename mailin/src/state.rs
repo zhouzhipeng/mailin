@@ -16,7 +16,7 @@ impl State {
         match self {
             Self::Hello(hello) => hello.ok(smtp),
             Self::Mail(mail) => mail.ok(smtp),
-            _ => OK.clone(),
+            _ => OK,
         }
     }
 }
@@ -47,7 +47,7 @@ impl From<Mail> for Hello {
     fn from(m: Mail) -> Self {
         Self {
             ip: m.ip,
-            is_ehlo: m.is_ehlo,
+            is_esmtp: m.is_esmtp,
             domain: m.domain,
         }
     }
@@ -65,12 +65,12 @@ pub struct Idle {
 #[derive(Debug)]
 pub struct Hello {
     pub ip: IpAddr,
-    pub is_ehlo: bool,
+    pub is_esmtp: bool,
     pub domain: String,
 }
 
 impl Hello {
-    pub(crate) fn from_state(state: State, is_ehlo: bool, domain: &str) -> Self {
+    pub(crate) fn from_state(state: State, is_esmtp: bool, domain: &str) -> Self {
         let ip = match state {
             State::Idle(idle) => idle.ip,
             State::Hello(hello) => hello.ip,
@@ -79,7 +79,7 @@ impl Hello {
         };
         Self {
             ip,
-            is_ehlo,
+            is_esmtp,
             domain: domain.into(),
         }
     }
@@ -95,12 +95,12 @@ impl Hello {
 
     pub fn ok(self, smtp: &mut Smtp) -> Response {
         smtp.next_state(State::Hello(self));
-        OK.clone()
+        OK
     }
 
     pub fn deny(self, smtp: &mut Smtp, _msg: &str) -> Response {
         smtp.next_state(State::Idle(self.into()));
-        BAD_HELLO.clone()
+        BAD_HELLO
     }
 }
 
@@ -110,7 +110,7 @@ impl Hello {
 pub struct Mail {
     pub ip: IpAddr,
     pub domain: String,
-    pub is_ehlo: bool,
+    pub is_esmtp: bool,
     pub reverse_path: String,
     pub is8bit: bool,
 }
@@ -118,19 +118,19 @@ pub struct Mail {
 impl Mail {
     pub fn ok(self, smtp: &mut Smtp) -> Response {
         smtp.next_state(State::Mail(self));
-        OK.clone()
+        OK
     }
 
     pub fn deny(self, smtp: &mut Smtp, _msg: &str) -> Response {
         smtp.next_state(State::Hello(self.into()));
-        NO_SERVICE.clone()
+        NO_SERVICE
     }
 
     pub(crate) fn from_hello(hello: Hello, reverse_path: &str, is8bit: bool) -> Self {
         Self {
             ip: hello.ip,
             domain: hello.domain,
-            is_ehlo: hello.is_ehlo,
+            is_esmtp: hello.is_esmtp,
             reverse_path: String::from(reverse_path),
             is8bit,
         }

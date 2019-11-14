@@ -1,4 +1,3 @@
-use lazy_static::lazy_static;
 use log::trace;
 use std::io;
 use std::io::Write;

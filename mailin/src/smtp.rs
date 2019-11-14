@@ -28,7 +28,7 @@ impl Smtp {
                 if let Some(prev_state) = self.state.take() {
                     self.handle_cmd(prev_state, cmd)
                 } else {
-                    Event::SendReponse(INVALID_STATE.clone())
+                    Event::SendReponse(INVALID_STATE)
                 }
             }
         }
@@ -36,7 +36,10 @@ impl Smtp {
 
     fn handle_cmd(&mut self, prev_state: State, cmd: Cmd) -> Event {
         match (prev_state, cmd) {
-            (State::Idle(_), Cmd::Rset) => Event::SendReponse(OK.clone()),
+            (State::Idle(idle), Cmd::Rset) => {
+                self.next_state(State::Idle(idle));
+                Event::SendReponse(OK)
+            }
             (
                 State::Hello(hello),
                 Cmd::Mail {
@@ -50,9 +53,12 @@ impl Smtp {
             (state, Cmd::Ehlo { domain }) => to_event(Hello::from_state(state, true, domain)),
             (state, Cmd::Rset) => {
                 self.next_state(Hello::from_rset(state).into());
-                Event::SendReponse(OK.clone())
+                Event::SendReponse(OK)
             }
-            (_, _) => Event::SendReponse(BAD_SEQUENCE_COMMANDS.clone()),
+            (state, _) => {
+                self.next_state(state);
+                Event::SendReponse(BAD_SEQUENCE_COMMANDS)
+            }
         }
     }
 
@@ -67,6 +73,10 @@ impl Smtp {
     pub(crate) fn next_state(&mut self, next: State) {
         self.state = Some(next);
     }
+
+    pub(crate) fn state(&self) -> Option<&State> {
+        self.state.as_ref()
+    }
 }
 
 fn to_event<S>(s: S) -> Event
@@ -80,10 +90,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use matches::matches;
 
     fn unexpected(ev: Event) -> Response {
         assert!(false, format!("Unexpected {:#?}", ev));
-        INVALID_STATE.clone()
+        INVALID_STATE
     }
 
     #[test]
@@ -91,19 +102,50 @@ mod tests {
         let mut smtp = Smtp::new("127.0.0.1".parse().unwrap());
         let res = match smtp.process(b"helo a.domain\r\n") {
             Event::ChangeState(State::Hello(hello)) => {
-                assert_eq!(hello.is_ehlo, false);
+                assert_eq!(hello.is_esmtp, false);
                 hello.ok(&mut smtp)
             }
             ev => unexpected(ev),
         };
         assert_eq!(res.code, 250);
+        assert!(matches!(smtp.state(), Some(State::Hello(Hello{is_esmtp: false, ..}))));
         let res = match smtp.process(b"ehlo b.domain\r\n") {
             Event::ChangeState(State::Hello(hello)) => {
-                assert_eq!(hello.is_ehlo, true);
+                assert_eq!(hello.is_esmtp, true);
                 hello.ok(&mut smtp)
             }
             ev => unexpected(ev),
         };
         assert_eq!(res.code, 250);
+        assert!(matches!(smtp.state(), Some(State::Hello(Hello{is_esmtp: true, ..}))));
+    }
+
+    #[test]
+    fn mail_from() {
+        let mut smtp = Smtp::new("127.0.0.1".parse().unwrap());
+        let res = match smtp.process(b"helo a.domain\r\n") {
+            Event::ChangeState(State::Hello(hello)) => {
+                assert_eq!(hello.is_esmtp, false);
+                hello.ok(&mut smtp)
+            }
+            ev => unexpected(ev),
+        };
+        assert_eq!(res.code, 250);
+        let res = match smtp.process(b"mail from:<ship@sea.com>\r\n") {
+            Event::ChangeState(State::Mail(mail)) => mail.ok(&mut smtp),
+            ev => unexpected(ev),
+        };
+        assert_eq!(res.code, 250);
+        assert!(matches!(smtp.state(), Some(State::Mail(_))));
+    }
+
+    #[test]
+    fn domain_badchars() {
+        let mut smtp = Smtp::new("127.0.0.1".parse().unwrap());
+        let res = smtp.process(b"helo world\x40\xff\r\n");
+        assert!(matches!(
+            res,
+            Event::SendReponse(Response { code: 500, .. })
+        ));
     }
 }
