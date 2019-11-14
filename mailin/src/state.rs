@@ -14,9 +14,10 @@ pub enum State {
 impl State {
     pub fn ok(self, session: &mut Session) -> Response {
         match self {
+            Self::Idle(idle) => OK,
             Self::Hello(hello) => hello.ok(session),
             Self::Mail(mail) => mail.ok(session),
-            _ => OK,
+            End => OK,
         }
     }
 }
@@ -94,7 +95,7 @@ impl Hello {
     }
 
     pub fn ok(self, session: &mut Session) -> Response {
-        session.next_state(State::Hello(self));
+        session.next_state(self);
         OK
     }
 
@@ -117,7 +118,7 @@ pub struct Mail {
 
 impl Mail {
     pub fn ok(self, session: &mut Session) -> Response {
-        session.next_state(State::Mail(self));
+        session.next_state(self);
         OK
     }
 

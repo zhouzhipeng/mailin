@@ -1,10 +1,70 @@
+use crate::auth::AuthMechanism;
 use crate::cmd::Cmd;
 use crate::parser::parse;
 use crate::response::{Response, BAD_SEQUENCE_COMMANDS, INVALID_STATE, OK};
 use crate::state::{Hello, Idle, Mail, State};
 use std::net::IpAddr;
 
+/// Builds an smtp `Session`
+///
+/// # Examples
+/// ```rust,ignore
+/// # use mailin::{Session, SessionBuilder, Handler, Action, AuthMechanism};
+///
+/// # use std::net::{IpAddr, Ipv4Addr};
+/// # impl Handler for EmptyHandler{};
+/// # let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+/// # let handler = EmptyHandler{};
+/// // Create a session builder that holds the configuration
+/// let mut builder = SessionBuilder::new("server_name");
+/// builder.enable_start_tls()
+///        .enable_auth(AuthMechanism::Plain);
+/// // Then when a client connects
+/// let mut session = builder.build(addr, handler);
+/// ```
+pub struct SessionBuilder {
+    name: String,
+    start_tls_extension: bool,
+    auth_mechanisms: Vec<AuthMechanism>,
+}
+
+impl SessionBuilder {
+    /// Create a new session for the given mailserver name
+    pub fn new<S: Into<String>>(name: S) -> Self {
+        Self {
+            name: name.into(),
+            start_tls_extension: false,
+            auth_mechanisms: Vec::with_capacity(4),
+        }
+    }
+
+    /// Enable support for StartTls
+    pub fn enable_start_tls(&mut self) -> &mut Self {
+        self.start_tls_extension = true;
+        self
+    }
+
+    /// Enable support for authentication
+    pub fn enable_auth(&mut self, auth: AuthMechanism) -> &mut Self {
+        self.auth_mechanisms.push(auth);
+        self
+    }
+
+    /// Build a new session to handle a connection from the given ip address
+    pub fn build(&self, remote: IpAddr) -> Session {
+        Session {
+            server_name: self.name.clone(),
+            auth_mechanisms: self.auth_mechanisms.clone(),
+            start_tls_extension: self.start_tls_extension,
+            state: Some(State::Idle(Idle { ip: remote })),
+        }
+    }
+}
+
 pub struct Session {
+    server_name: String,
+    auth_mechanisms: Vec<AuthMechanism>,
+    start_tls_extension: bool,
     state: Option<State>,
 }
 
@@ -15,12 +75,6 @@ pub enum Event {
 }
 
 impl Session {
-    pub fn new(ip: IpAddr) -> Self {
-        Self {
-            state: Some(State::Idle(Idle { ip })),
-        }
-    }
-
     pub fn process(&mut self, line: &[u8]) -> Event {
         match parse(line) {
             Err(response) => Event::SendReponse(response),
@@ -52,7 +106,7 @@ impl Session {
             (state, Cmd::Helo { domain }) => to_event(Hello::from_state(state, false, domain)),
             (state, Cmd::Ehlo { domain }) => to_event(Hello::from_state(state, true, domain)),
             (state, Cmd::Rset) => {
-                self.next_state(Hello::from_rset(state).into());
+                self.next_state(Hello::from_rset(state));
                 Event::SendReponse(OK)
             }
             (state, _) => {
@@ -62,16 +116,11 @@ impl Session {
         }
     }
 
-    pub fn handle_client<F>(&mut self, handler: F)
+    pub(crate) fn next_state<S>(&mut self, next: S)
     where
-        F: Fn(&mut Self),
+        S: Into<State>,
     {
-        // Setup client then
-        handler(self)
-    }
-
-    pub(crate) fn next_state(&mut self, next: State) {
-        self.state = Some(next);
+        self.state = Some(next.into());
     }
 
     pub(crate) fn state(&self) -> Option<&State> {
@@ -91,15 +140,21 @@ where
 mod tests {
     use super::*;
     use matches::matches;
+    use std::net::Ipv4Addr;
 
     fn unexpected(ev: Event) -> Response {
         assert!(false, format!("Unexpected {:#?}", ev));
         INVALID_STATE
     }
 
+    fn new_session() -> Session {
+        let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        SessionBuilder::new("some.name").build(addr)
+    }
+
     #[test]
     fn helo_ehlo() {
-        let mut session = Session::new("127.0.0.1".parse().unwrap());
+        let mut session = new_session();
         let res = match session.process(b"helo a.domain\r\n") {
             Event::ChangeState(State::Hello(hello)) => {
                 assert_eq!(hello.is_esmtp, false);
@@ -122,7 +177,7 @@ mod tests {
 
     #[test]
     fn mail_from() {
-        let mut session = Session::new("127.0.0.1".parse().unwrap());
+        let mut session = new_session();
         let res = match session.process(b"helo a.domain\r\n") {
             Event::ChangeState(State::Hello(hello)) => {
                 assert_eq!(hello.is_esmtp, false);
@@ -141,7 +196,7 @@ mod tests {
 
     #[test]
     fn domain_badchars() {
-        let mut session = Session::new("127.0.0.1".parse().unwrap());
+        let mut session = new_session();
         let res = session.process(b"helo world\x40\xff\r\n");
         assert!(matches!(
             res,

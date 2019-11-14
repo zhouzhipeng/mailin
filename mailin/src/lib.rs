@@ -1,3 +1,4 @@
+mod auth;
 mod cmd;
 mod parser;
 mod response;
