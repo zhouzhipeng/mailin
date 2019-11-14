@@ -29,7 +29,7 @@ pub mod err;
 
 #[cfg(feature = "ossl")]
 mod ossl;
-#[cfg(feature = "rtls")]
+#[cfg(feature = "default")]
 mod rtls;
 mod running;
 mod ssl;
@@ -37,20 +37,14 @@ mod ssl;
 use crate::err::Error;
 #[cfg(feature = "ossl")]
 use crate::ossl::SslImpl;
-#[cfg(feature = "rtls")]
+#[cfg(feature = "default")]
 use crate::rtls::SslImpl;
 pub use crate::ssl::SslConfig;
-pub use mailin::{
-    AuthMechanism, AuthResult, DataResult, Handler, HeloResult, MailResult, RcptResult,
-};
+pub use mailin::AuthMechanism;
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 
 /// `Server` is used to configure and start the SMTP server
-pub struct Server<H>
-where
-    H: Handler + Clone + Send,
-{
-    handler: H,
+pub struct Server {
     name: String,
     ssl: Option<SslImpl>,
     num_threads: u32,
@@ -59,14 +53,10 @@ where
     socket_address: Vec<SocketAddr>,
 }
 
-impl<H> Server<H>
-where
-    H: Handler + Clone + Send,
-{
-    /// Create a new server with the given Handler
-    pub fn new(handler: H) -> Self {
+impl Server {
+    /// Create a new server
+    pub fn new() -> Self {
         Self {
-            handler,
             name: "localhost".to_owned(),
             ssl: None,
             num_threads: 4,
