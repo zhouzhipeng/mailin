@@ -3,12 +3,13 @@ use crate::err::Error;
 use crate::ossl::SslImpl;
 #[cfg(feature = "default")]
 use crate::rtls::SslImpl;
+use crate::session::Session;
 use crate::ssl::Stream;
 use crate::Server;
 use bufstream::BufStream;
 use lazy_static::lazy_static;
 use log::{debug, error, info};
-use mailin::{Action, Response, Session, SessionBuilder};
+use mailin::{Action, Response};
 use scoped_threadpool::Pool;
 use std::io::{BufRead, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
@@ -25,13 +26,16 @@ enum SessionResult {
 
 struct ServerState {
     listener: TcpListener,
-    session_builder: SessionBuilder,
+    session_builder: mailin::SessionBuilder,
     ssl: Option<SslImpl>,
     num_threads: u32,
 }
 
-pub(crate) fn serve(config: Server) -> Result<(), Error> {
-    let mut session_builder = SessionBuilder::new(config.name.clone());
+pub(crate) fn serve<F>(config: Server, handler: F) -> Result<(), Error>
+where
+    F: Fn(&mut Session),
+{
+    let mut session_builder = mailin::SessionBuilder::new(config.name.clone());
     if config.ssl.is_some() {
         session_builder.enable_start_tls();
     }
@@ -51,10 +55,13 @@ pub(crate) fn serve(config: Server) -> Result<(), Error> {
         ssl: config.ssl,
         num_threads: config.num_threads,
     };
-    run(&config.name, &server_state)
+    run(&config.name, &server_state, handler)
 }
 
-fn run(name: &str, server_state: &ServerState) -> Result<(), Error> {
+fn run<F>(name: &str, server_state: &ServerState, handler: F) -> Result<(), Error>
+where
+    F: Fn(&mut Session),
+{
     let mut pool = Pool::new(server_state.num_threads);
     let localaddr = server_state.listener.local_addr()?;
     info!("{} SMTP started on {}", name, localaddr);
@@ -63,15 +70,20 @@ fn run(name: &str, server_state: &ServerState) -> Result<(), Error> {
         let builder = &server_state.session_builder;
         let acceptor = server_state.ssl.clone();
         pool.scoped(|scope| {
-            scope.execute(move || handle_connection(stream, builder, acceptor));
+            scope.execute(move || handle_connection(stream, builder, acceptor, handler));
         });
     }
     Ok(())
 }
 
-fn handle_session<S>(session: &mut Session, stream: &mut S) -> Result<SessionResult, Error>
+fn handle_session<S, F>(
+    session: &mut mailin::Session,
+    stream: &mut S,
+    handler: F,
+) -> Result<SessionResult, Error>
 where
     S: BufRead + Write,
+    F: Fn(&mut Session),
 {
     let mut line = Vec::with_capacity(80);
     loop {
@@ -123,7 +135,7 @@ fn upgrade_tls(stream: TcpStream, ssl: Option<SslImpl>) -> Result<impl Stream, E
 }
 
 fn start_session(
-    session_builder: &SessionBuilder,
+    session_builder: &mailin::SessionBuilder,
     remote: IpAddr,
     mut stream: BufStream<TcpStream>,
     ssl: Option<SslImpl>,
@@ -144,7 +156,14 @@ fn start_session(
     Ok(())
 }
 
-fn handle_connection(stream: TcpStream, session_builder: &SessionBuilder, ssl: Option<SslImpl>) {
+fn handle_connection<F>(
+    stream: TcpStream,
+    session_builder: &mailin::SessionBuilder,
+    ssl: Option<SslImpl>,
+    handler: F,
+) where
+    F: Fn(&mut Session),
+{
     let remote = stream
         .peer_addr()
         .map(|saddr| saddr.ip())
@@ -153,7 +172,7 @@ fn handle_connection(stream: TcpStream, session_builder: &SessionBuilder, ssl: O
     stream.set_read_timeout(Some(*FIVE_MINUTES)).ok();
     stream.set_write_timeout(Some(*FIVE_MINUTES)).ok();
     let bufstream = BufStream::new(stream);
-    if let Err(err) = start_session(session_builder, remote, bufstream, ssl) {
+    if let Err(err) = start_session(session_builder, remote, bufstream, ssl, handler) {
         error!("({}) {}", remote, err);
     }
 }

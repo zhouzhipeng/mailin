@@ -3,21 +3,25 @@
 //! This library provides a simple embeddable SMTP server. The
 //! server uses blocking IO and a threadpool.
 //! # Examples
-//! ```no_run
+//! ```rust,no_run
 //! use mailin_embedded::{Server, SslConfig, Handler};
 //! # use mailin_embedded::err::Error;
 //!
-//! #[derive(Clone)]
-//! struct MyHandler {}
-//! impl Handler for MyHandler{}
-//!
-//! let handler = MyHandler {};
-//! let mut server = Server::new(handler);
-//!
-//! server.with_name("example.com")
+//! Server.with_name("example.com")
 //!    .with_ssl(SslConfig::None)?
 //!    .with_addr("127.0.0.1:25")?;
-//! server.serve();
+//! server.serve(|session| {
+//!    loop {
+//!       let response = match session.next_state() {
+//!           State::Hello(hello) => if (hello.domain == "fish") {
+//!               hello.deny(session, "No fish allowed");
+//!           }
+//!           State::End => break,
+//!           state => state.ok(),
+//!       };
+//!       session.response(response);
+//!    }
+//! });
 //! # Ok::<(), Error>(())
 //! ```
 
@@ -32,6 +36,7 @@ mod ossl;
 #[cfg(feature = "default")]
 mod rtls;
 mod running;
+mod session;
 mod ssl;
 
 use crate::err::Error;
@@ -123,7 +128,10 @@ impl Server {
     }
 
     /// Start the SMTP server and run forever
-    pub fn serve(self) -> Result<(), Error> {
-        running::serve(self)
+    pub fn serve<F>(self, handler: F) -> Result<(), Error>
+    where
+        F: Fn(&mut Session),
+    {
+        running::serve(self, handler)
     }
 }
