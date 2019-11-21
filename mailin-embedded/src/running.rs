@@ -9,7 +9,7 @@ use crate::Server;
 use bufstream::BufStream;
 use lazy_static::lazy_static;
 use log::{debug, error, info};
-use mailin::{Action, Response};
+use mailin::{Action, Event, Response};
 use scoped_threadpool::Pool;
 use std::io::{BufRead, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
@@ -76,48 +76,6 @@ where
     Ok(())
 }
 
-fn handle_session<S, F>(
-    session: &mut mailin::Session,
-    stream: &mut S,
-    handler: F,
-) -> Result<SessionResult, Error>
-where
-    S: BufRead + Write,
-    F: Fn(&mut Session),
-{
-    let mut line = Vec::with_capacity(80);
-    loop {
-        line.clear();
-        let num_bytes = stream.read_until(b'\n', &mut line)?;
-        if num_bytes == 0 {
-            break;
-        }
-        match session.process(&line) {
-            // TODO: move into a function
-            Event::SendReponse(response) => match response.action {
-                Action::Reply => {
-                    write_response(stream, &res)?;
-                }
-                Action::Close => {
-                    write_response(stream, &res)?;
-                    if res.is_error {
-                        "SMTP error".to_string();
-                    } else {
-                        return Ok(SessionResult::Finished);
-                    }
-                }
-                Action::UpgradeTls => {
-                    write_response(stream, &res)?;
-                    return Ok(SessionResult::UpgradeTls);
-                }
-                Action::NoReply => (),
-            },
-            Event::ChangeState(state) => handler_fn(&mut session, state),
-        }
-    }
-    Error::bail("Unexpected Eof")
-}
-
 fn write_response(mut writer: &mut dyn Write, res: &Response) -> Result<(), Error> {
     res.write_to(&mut writer)?;
     writer
@@ -134,25 +92,20 @@ fn upgrade_tls(stream: TcpStream, ssl: Option<SslImpl>) -> Result<impl Stream, E
     }
 }
 
-fn start_session(
+fn start_session<F>(
     session_builder: &mailin::SessionBuilder,
     remote: IpAddr,
     mut stream: BufStream<TcpStream>,
     ssl: Option<SslImpl>,
-) -> Result<(), Error> {
-    let mut session = session_builder.build(remote);
-    write_response(&mut stream, &session.greeting())?;
-    let res = handle_session(&mut session, &mut stream)?;
-    // TODO: remove?
-    if let SessionResult::UpgradeTls = res {
-        let inner_stream = stream
-            .into_inner()
-            .map_err(|e| Error::with_source("Cannot flush original TcpStream", e))?;
-        let tls = upgrade_tls(inner_stream, ssl)?;
-        session.tls_active();
-        let mut buf_tls = BufStream::new(tls);
-        handle_session(&mut session, &mut buf_tls)?;
-    }
+    handler: F,
+) -> Result<(), Error>
+where
+    F: Fn(&mut Session),
+{
+    let inner = session_builder.build(remote);
+    let session = Session::new(&mut inner, &mut stream);
+    session.greeting()?;
+    handler(&mut session);
     Ok(())
 }
 
