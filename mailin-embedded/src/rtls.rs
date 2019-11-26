@@ -1,4 +1,4 @@
-use crate::ssl::{SslConfig, Stream};
+use crate::ssl::SslConfig;
 use crate::Error;
 use rustls;
 use rustls::{
@@ -15,7 +15,7 @@ pub struct SslImpl {
     tls_config: Arc<ServerConfig>,
 }
 
-impl Stream for StreamOwned<ServerSession, TcpStream> {}
+pub type SslStream = StreamOwned<ServerSession, TcpStream>;
 
 impl From<TLSError> for Error {
     fn from(error: TLSError) -> Self {
@@ -58,7 +58,7 @@ impl SslImpl {
         Ok(ret)
     }
 
-    pub fn accept(&self, stream: TcpStream) -> Result<impl Stream, Error> {
+    pub fn accept(&self, stream: TcpStream) -> Result<SslStream, Error> {
         let session = ServerSession::new(&self.tls_config);
         let tls_stream = StreamOwned::new(session, stream);
         Ok(tls_stream)

@@ -44,6 +44,7 @@ use crate::err::Error;
 use crate::ossl::SslImpl;
 #[cfg(feature = "default")]
 use crate::rtls::SslImpl;
+pub use crate::session::Session;
 pub use crate::ssl::SslConfig;
 pub use mailin::AuthMechanism;
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
@@ -130,7 +131,7 @@ impl Server {
     /// Start the SMTP server and run forever
     pub fn serve<F>(self, handler: F) -> Result<(), Error>
     where
-        F: Fn(&mut Session),
+        F: Fn(&mut Session) + Send,
     {
         running::serve(self, handler)
     }

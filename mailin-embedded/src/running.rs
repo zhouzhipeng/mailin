@@ -4,14 +4,11 @@ use crate::ossl::SslImpl;
 #[cfg(feature = "default")]
 use crate::rtls::SslImpl;
 use crate::session::Session;
-use crate::ssl::Stream;
 use crate::Server;
 use bufstream::BufStream;
 use lazy_static::lazy_static;
 use log::{debug, error, info};
-use mailin::{Action, Event, Response};
 use scoped_threadpool::Pool;
-use std::io::{BufRead, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::time::Duration;
 
@@ -33,7 +30,7 @@ struct ServerState {
 
 pub(crate) fn serve<F>(config: Server, handler: F) -> Result<(), Error>
 where
-    F: Fn(&mut Session),
+    F: Fn(&mut Session) + Send,
 {
     let mut session_builder = mailin::SessionBuilder::new(config.name.clone());
     if config.ssl.is_some() {
@@ -60,7 +57,7 @@ where
 
 fn run<F>(name: &str, server_state: &ServerState, handler: F) -> Result<(), Error>
 where
-    F: Fn(&mut Session),
+    F: Fn(&mut Session) + Send,
 {
     let mut pool = Pool::new(server_state.num_threads);
     let localaddr = server_state.listener.local_addr()?;
@@ -76,22 +73,6 @@ where
     Ok(())
 }
 
-fn write_response(mut writer: &mut dyn Write, res: &Response) -> Result<(), Error> {
-    res.write_to(&mut writer)?;
-    writer
-        .flush()
-        .map_err(|e| Error::with_source("Cannot write response", e))
-}
-
-fn upgrade_tls(stream: TcpStream, ssl: Option<SslImpl>) -> Result<impl Stream, Error> {
-    if let Some(acceptor) = ssl {
-        let ret = acceptor.accept(stream)?;
-        Ok(ret)
-    } else {
-        Error::bail("Cannot upgrade to TLS without an SslAcceptor")
-    }
-}
-
 fn start_session<F>(
     session_builder: &mailin::SessionBuilder,
     remote: IpAddr,
@@ -103,7 +84,7 @@ where
     F: Fn(&mut Session),
 {
     let inner = session_builder.build(remote);
-    let session = Session::new(&mut inner, &mut stream);
+    let session = Session::new(inner, stream, ssl);
     session.greeting()?;
     handler(&mut session);
     Ok(())
