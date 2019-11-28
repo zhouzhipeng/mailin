@@ -4,7 +4,7 @@ use crate::ossl::SslImpl;
 #[cfg(feature = "default")]
 use crate::rtls::SslImpl;
 use crate::session::Session;
-use crate::Server;
+use crate::{HandlerFn, Server};
 use bufstream::BufStream;
 use lazy_static::lazy_static;
 use log::{debug, error, info};
@@ -16,11 +16,6 @@ lazy_static! {
     static ref FIVE_MINUTES: Duration = Duration::new(5 * 60, 0);
 }
 
-enum SessionResult {
-    Finished,
-    UpgradeTls,
-}
-
 struct ServerState {
     listener: TcpListener,
     session_builder: mailin::SessionBuilder,
@@ -28,10 +23,7 @@ struct ServerState {
     num_threads: u32,
 }
 
-pub(crate) fn serve<F>(config: Server, handler: F) -> Result<(), Error>
-where
-    F: Fn(&mut Session) + Send,
-{
+pub(crate) fn serve(config: Server, handler: HandlerFn) -> Result<(), Error> {
     let mut session_builder = mailin::SessionBuilder::new(config.name.clone());
     if config.ssl.is_some() {
         session_builder.enable_start_tls();
@@ -55,10 +47,7 @@ where
     run(&config.name, &server_state, handler)
 }
 
-fn run<F>(name: &str, server_state: &ServerState, handler: F) -> Result<(), Error>
-where
-    F: Fn(&mut Session) + Send,
-{
+fn run(name: &str, server_state: &ServerState, handler: HandlerFn) -> Result<(), Error> {
     let mut pool = Pool::new(server_state.num_threads);
     let localaddr = server_state.listener.local_addr()?;
     info!("{} SMTP started on {}", name, localaddr);
@@ -66,6 +55,7 @@ where
         let stream = conn?;
         let builder = &server_state.session_builder;
         let acceptor = server_state.ssl.clone();
+        let handler = handler.clone();
         pool.scoped(|scope| {
             scope.execute(move || handle_connection(stream, builder, acceptor, handler));
         });
@@ -73,31 +63,26 @@ where
     Ok(())
 }
 
-fn start_session<F>(
+fn start_session(
     session_builder: &mailin::SessionBuilder,
     remote: IpAddr,
-    mut stream: BufStream<TcpStream>,
+    stream: BufStream<TcpStream>,
     ssl: Option<SslImpl>,
-    handler: F,
-) -> Result<(), Error>
-where
-    F: Fn(&mut Session),
-{
+    handler: HandlerFn,
+) -> Result<(), Error> {
     let inner = session_builder.build(remote);
-    let session = Session::new(inner, stream, ssl);
+    let mut session = Session::new(inner, stream, ssl);
     session.greeting()?;
     handler(&mut session);
     Ok(())
 }
 
-fn handle_connection<F>(
+fn handle_connection(
     stream: TcpStream,
     session_builder: &mailin::SessionBuilder,
     ssl: Option<SslImpl>,
-    handler: F,
-) where
-    F: Fn(&mut Session),
-{
+    handler: HandlerFn,
+) {
     let remote = stream
         .peer_addr()
         .map(|saddr| saddr.ip())

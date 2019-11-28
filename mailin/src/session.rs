@@ -61,20 +61,20 @@ impl SessionBuilder {
     }
 }
 
-pub struct Session {
+pub struct Session<'a> {
     server_name: String,
     auth_mechanisms: Vec<AuthMechanism>,
     start_tls_extension: bool,
-    state: Option<State>,
+    state: Option<State<'a>>,
 }
 
 #[derive(Debug)]
-pub enum Event {
-    ChangeState(State),
+pub enum Event<'a> {
+    ChangeState(State<'a>),
     SendReponse(Response),
 }
 
-impl Session {
+impl Session<'_> {
     pub fn process(&mut self, line: &[u8]) -> Event {
         match parse(line) {
             Err(response) => Event::SendReponse(response),
@@ -86,6 +86,15 @@ impl Session {
                 }
             }
         }
+    }
+
+    /// Returns a greeting to send to a client
+    pub fn greeting(&self) -> Response {
+        Response::dynamic(220, format!("{} ESMTP", self.server_name), Vec::new())
+    }
+
+    pub fn tls_active(&mut self) {
+        // TODO: implement
     }
 
     fn handle_cmd(&mut self, prev_state: State, cmd: Cmd) -> Event {
@@ -116,9 +125,9 @@ impl Session {
         }
     }
 
-    pub(crate) fn next_state<S>(&mut self, next: S)
+    pub(crate) fn next_state<'a, S>(&'a mut self, next: S)
     where
-        S: Into<State>,
+        S: Into<State<'a>>,
     {
         self.state = Some(next.into());
     }
@@ -128,9 +137,9 @@ impl Session {
     }
 }
 
-fn to_event<S>(s: S) -> Event
+fn to_event<'a, S>(s: S) -> Event<'a>
 where
-    S: Into<State>,
+    S: Into<State<'a>> + 'a,
 {
     let state: State = s.into();
     Event::ChangeState(state)

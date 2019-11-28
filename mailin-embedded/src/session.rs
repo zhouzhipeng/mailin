@@ -3,12 +3,15 @@ use crate::Error;
 use bufstream::BufStream;
 use mailin::Response;
 use mailin::{Action, Event, State};
+use std::io;
 use std::io::{BufRead, Write};
+use std::mem;
 use std::net::TcpStream;
 
 enum Stream {
     Unencrypted(BufStream<TcpStream>),
     Encrypted(BufStream<SslStream>),
+    Empty,
 }
 
 pub struct Session {
@@ -19,12 +22,13 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn handle(&mut self, handler: Box<dyn FnMut(State) -> Response>) {
+    pub fn handle(&mut self, mut handler: impl FnMut(State) -> Response) {
         loop {
             self.line.clear();
-            let read = match self.stream {
+            let read = match &mut self.stream {
                 Stream::Unencrypted(s) => s.read_until(b'\n', &mut self.line),
                 Stream::Encrypted(s) => s.read_until(b'\n', &mut self.line),
+                Stream::Empty => Err(io::ErrorKind::NotConnected.into()),
             };
             match read {
                 Err(_) | Ok(0) => return,
@@ -37,7 +41,10 @@ impl Session {
                     _ => handler(state),
                 },
             };
-            self.respond(&response);
+            if let Err(_) = self.respond(&response) {
+                // TODO: log errors
+                break;
+            }
             if let Action::Close = response.action {
                 break;
             }
@@ -81,13 +88,16 @@ impl Session {
     }
 
     fn upgrade_tls(&mut self) -> Result<(), Error> {
-        match self.stream {
+        let mut current = Stream::Empty;
+        mem::swap(&mut current, &mut self.stream);
+        match current {
             Stream::Encrypted(_) => Error::bail("Cannot upgrade to TLS from TLS"),
+            Stream::Empty => Error::bail("Not connected"),
             Stream::Unencrypted(s) => {
                 let inner_stream = s
                     .into_inner()
                     .map_err(|e| Error::with_source("Cannot flush original TcpStream", e))?;
-                let tls = if let Some(acceptor) = self.ssl {
+                let tls = if let Some(acceptor) = &self.ssl {
                     acceptor.accept(inner_stream)?
                 } else {
                     Error::bail("Cannot upgrade to TLS without an SslAcceptor")?
@@ -106,11 +116,12 @@ fn write_response(writer: &mut Stream, res: &Response) -> Result<(), Error> {
     match writer {
         Stream::Unencrypted(s) => write(s, res),
         Stream::Encrypted(s) => write(s, res),
+        Stream::Empty => Error::bail("Not connected"),
     }
 }
 
 fn write(writer: &mut dyn Write, res: &Response) -> Result<(), Error> {
-    res.write_to(&mut writer)?;
+    res.write_to(writer)?;
     writer
         .flush()
         .map_err(|e| Error::with_source("Cannot write response", e))

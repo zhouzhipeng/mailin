@@ -4,29 +4,31 @@
 //! server uses blocking IO and a threadpool.
 //! # Examples
 //! ```rust,no_run
-//! use mailin_embedded::{Server, SslConfig, Handler};
-//! # use mailin_embedded::err::Error;
+//! use mailin_embedded::{Server, SslConfig, State, Error};
+//! # use std::sync::Arc;
 //!
-//! Server.with_name("example.com")
+//! let server = Server::new();
+//! server
+//!    .with_name("example.com")
 //!    .with_ssl(SslConfig::None)?
-//!    .with_addr("127.0.0.1:25")?;
-//! server.serve(|session| {
-//!    loop {
-//!       let response = match session.next_state() {
-//!           State::Hello(hello) => if (hello.domain == "fish") {
-//!               hello.deny(session, "No fish allowed");
-//!           }
-//!           State::End => break,
-//!           state => state.ok(),
-//!       };
-//!       session.response(response);
-//!    }
-//! });
+//!    .with_addr("127.0.0.1:25")?
+//!    .serve(Arc::new(|session| {
+//!         let mut counter = 0;
+//!         session.handle(|state| {
+//!              counter += 1;
+//!              match state {
+//!                  State::Hello(hello) if (hello.domain == "spam.com") => {
+//!                      hello.deny("Bad domain")
+//!                  }
+//!                  state => state.ok(),
+//!              }
+//!         });
+//!    }));
 //! # Ok::<(), Error>(())
 //! ```
 
 #![forbid(unsafe_code)]
-#![forbid(missing_docs)]
+// #![forbid(missing_docs)]
 
 /// Custom error type for mailin_embedded
 pub mod err;
@@ -39,7 +41,7 @@ mod running;
 mod session;
 mod ssl;
 
-use crate::err::Error;
+pub use crate::err::Error;
 #[cfg(feature = "ossl")]
 use crate::ossl::SslImpl;
 #[cfg(feature = "default")]
@@ -47,7 +49,11 @@ use crate::rtls::SslImpl;
 pub use crate::session::Session;
 pub use crate::ssl::SslConfig;
 pub use mailin::AuthMechanism;
+pub use mailin::State;
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
+use std::sync::Arc;
+
+pub type HandlerFn = Arc<dyn Fn(&mut Session) + Send + Sync>;
 
 /// `Server` is used to configure and start the SMTP server
 pub struct Server {
@@ -109,12 +115,11 @@ impl Server {
     /// Add ip addresses and ports to listen on.
     /// Returns an error if the given socket addresses are not valid.
     /// ```
-    /// # use mailin_embedded::{Server, Handler};
+    /// # use mailin_embedded::Server;
     /// # use mailin_embedded::err::Error;
     /// # #[derive(Clone)]
-    /// # struct EmptyHandler {}
-    /// # impl Handler for EmptyHandler {}
-    /// # let mut server = Server::new(EmptyHandler {});
+    /// # let mut server = Server::new();
+    /// # server.with_name("doc");
     /// server.with_addr("127.0.0.1:25")?;
     /// # Ok::<(), Error>(())
     /// ```
@@ -129,10 +134,7 @@ impl Server {
     }
 
     /// Start the SMTP server and run forever
-    pub fn serve<F>(self, handler: F) -> Result<(), Error>
-    where
-        F: Fn(&mut Session) + Send,
-    {
+    pub fn serve<F>(self, handler: HandlerFn) -> Result<(), Error> {
         running::serve(self, handler)
     }
 }
