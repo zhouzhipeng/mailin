@@ -2,21 +2,35 @@ use crate::response::{Response, BAD_HELLO, NO_SERVICE, OK};
 use crate::session::Session;
 use std::net::IpAddr;
 
+struct StateChange<'a> {
+    next_state: State,
+    session: &'a mut Session,
+}
+
 #[derive(Debug)]
-pub enum State<'a> {
-    Idle(Idle<'a>),
-    Hello(Hello<'a>),
-    Mail(Mail<'a>),
+pub enum State {
+    Idle(Idle),
+    Hello(Hello),
+    Mail(Mail),
     End,
 }
 
 /// Mark a state transition as ok to continue
-impl State<'_> {
+impl StateChange<'_> {
     pub fn ok(self) -> Response {
         match self {
-            Self::Idle(idle) => OK,
-            Self::Hello(hello) => hello.ok(),
-            Self::Mail(mail) => mail.ok(),
+            Self {
+                next_state: State::Idle(_),
+                session,
+            } => OK,
+            Self {
+                next_state: State::Hello(hello),
+                session,
+            } => hello.ok(session),
+            Self {
+                next_state: State::Mail(mail),
+                session,
+            } => mail.ok(session),
             End => OK,
         }
     }
@@ -40,7 +54,10 @@ impl<'a> From<Mail<'a>> for State<'a> {
 
 impl<'a> From<Hello<'a>> for Idle<'a> {
     fn from(h: Hello<'a>) -> Self {
-        Self { ip: h.ip }
+        Self {
+            ip: h.ip,
+            session: h.session,
+        }
     }
 }
 
@@ -50,6 +67,7 @@ impl<'a> From<Mail<'a>> for Hello<'a> {
             ip: m.ip,
             is_esmtp: m.is_esmtp,
             domain: m.domain,
+            session: m.session,
         }
     }
 }
@@ -57,22 +75,20 @@ impl<'a> From<Mail<'a>> for Hello<'a> {
 //--- Idle ---
 
 #[derive(Debug)]
-pub struct Idle<'a> {
+pub struct Idle {
     pub ip: IpAddr,
-    session: &'a mut Session<'a>,
 }
 
 //--- Hello ---
 
 #[derive(Debug)]
-pub struct Hello<'a> {
+pub struct Hello {
     pub ip: IpAddr,
     pub is_esmtp: bool,
     pub domain: String,
-    session: &'a mut Session<'a>,
 }
 
-impl Hello<'_> {
+impl Hello {
     pub(crate) fn from_state(state: State, is_esmtp: bool, domain: &str) -> Self {
         let ip = match state {
             State::Idle(idle) => idle.ip,
@@ -87,7 +103,7 @@ impl Hello<'_> {
         }
     }
 
-    pub(crate) fn from_rset(state: State) -> Self {
+    pub(crate) fn from_rset(state: State<'a>) -> Self {
         match state {
             State::Idle(_) => unreachable!(),
             State::Hello(hello) => hello.into(),
@@ -96,13 +112,13 @@ impl Hello<'_> {
         }
     }
 
-    pub fn ok(self) -> Response {
-        self.session.next_state(self);
+    pub fn ok(self, session: &mut Session) -> Response {
+        session.next_state(self);
         OK
     }
 
-    pub fn deny(self, _msg: &str) -> Response {
-        self.session.next_state(State::Idle(self.into()));
+    pub fn deny(self, session: &mut Session, _msg: &str) -> Response {
+        session.next_state(State::Idle(self.into()));
         BAD_HELLO
     }
 }
@@ -110,32 +126,34 @@ impl Hello<'_> {
 //--- Mail ---
 
 #[derive(Debug)]
-pub struct Mail {
+pub struct Mail<'a> {
     pub ip: IpAddr,
     pub domain: String,
     pub is_esmtp: bool,
     pub reverse_path: String,
     pub is8bit: bool,
+    session: &'a mut Session<'a>,
 }
 
-impl Mail {
-    pub fn ok(self, session: &mut Session) -> Response {
-        session.next_state(self);
+impl<'a> Mail<'a> {
+    pub fn ok(self) -> Response {
+        self.session.next_state(self);
         OK
     }
 
-    pub fn deny(self, session: &mut Session, _msg: &str) -> Response {
-        session.next_state(State::Hello(self.into()));
+    pub fn deny(self, _msg: &str) -> Response {
+        self.session.next_state(State::Hello(self.into()));
         NO_SERVICE
     }
 
-    pub(crate) fn from_hello(hello: Hello, reverse_path: &str, is8bit: bool) -> Self {
+    pub(crate) fn from_hello(hello: Hello<'a>, reverse_path: &str, is8bit: bool) -> Self {
         Self {
             ip: hello.ip,
             domain: hello.domain,
             is_esmtp: hello.is_esmtp,
             reverse_path: String::from(reverse_path),
             is8bit,
+            session: hello.session,
         }
     }
 }

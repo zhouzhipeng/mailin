@@ -12,15 +12,15 @@
 //!    .with_name("example.com")
 //!    .with_ssl(SslConfig::None)?
 //!    .with_addr("127.0.0.1:25")?
-//!    .serve(Arc::new(|session| {
+//!    .serve(Arc::new(|client| {
 //!         let mut counter = 0;
-//!         session.handle(|state| {
+//!         client.handle(|state, session| {
 //!              counter += 1;
 //!              match state {
 //!                  State::Hello(hello) if (hello.domain == "spam.com") => {
-//!                      hello.deny("Bad domain")
+//!                      hello.deny(session, "Bad domain")
 //!                  }
-//!                  state => state.ok(),
+//!                  state => state.ok(session),
 //!              }
 //!         });
 //!    }));
