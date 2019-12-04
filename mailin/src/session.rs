@@ -8,19 +8,17 @@ use std::net::IpAddr;
 /// Builds an smtp `Session`
 ///
 /// # Examples
-/// ```rust,ignore
-/// # use mailin::{Session, SessionBuilder, Handler, Action, AuthMechanism};
+/// ```rust,no_run
+/// # use mailin::{Session, SessionBuilder, Action, AuthMechanism, Event, State};
 ///
 /// # use std::net::{IpAddr, Ipv4Addr};
-/// # impl Handler for EmptyHandler{};
 /// # let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-/// # let handler = EmptyHandler{};
 /// // Create a session builder that holds the configuration
 /// let mut builder = SessionBuilder::new("server_name");
 /// builder.enable_start_tls()
 ///        .enable_auth(AuthMechanism::Plain);
 /// // Then when a client connects
-/// let mut session = builder.build(addr, handler);
+/// let mut session = builder.build(addr);
 /// ```
 pub struct SessionBuilder {
     name: String,
@@ -74,18 +72,18 @@ pub struct Session {
 #[derive(Debug)]
 pub enum Event {
     ChangeState(State),
-    SendReponse(Response),
+    SendResponse(Response),
 }
 
 impl Session {
     pub fn process(&mut self, line: &[u8]) -> Event {
         match parse(line) {
-            Err(response) => Event::SendReponse(response),
+            Err(response) => Event::SendResponse(response),
             Ok(cmd) => {
                 if let Some(prev_state) = self.state.take() {
                     self.handle_cmd(prev_state, cmd)
                 } else {
-                    Event::SendReponse(INVALID_STATE)
+                    Event::SendResponse(INVALID_STATE)
                 }
             }
         }
@@ -104,7 +102,7 @@ impl Session {
         match (prev_state, cmd) {
             (State::Idle(idle), Cmd::Rset) => {
                 self.next_state(State::Idle(idle));
-                Event::SendReponse(OK)
+                Event::SendResponse(OK)
             }
             (
                 State::Hello(hello),
@@ -119,11 +117,11 @@ impl Session {
             (state, Cmd::Ehlo { domain }) => to_event(Hello::from_state(state, true, domain)),
             (state, Cmd::Rset) => {
                 self.next_state(Hello::from_rset(state));
-                Event::SendReponse(OK)
+                Event::SendResponse(OK)
             }
             (state, _) => {
                 self.next_state(state);
-                Event::SendReponse(BAD_SEQUENCE_COMMANDS)
+                Event::SendResponse(BAD_SEQUENCE_COMMANDS)
             }
         }
     }
@@ -212,7 +210,7 @@ mod tests {
         let res = session.process(b"helo world\x40\xff\r\n");
         assert!(matches!(
             res,
-            Event::SendReponse(Response { code: 500, .. })
+            Event::SendResponse(Response { code: 500, .. })
         ));
     }
 }
