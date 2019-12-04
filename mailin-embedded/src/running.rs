@@ -1,13 +1,14 @@
+use crate::client::Client;
 use crate::err::Error;
 #[cfg(feature = "ossl")]
 use crate::ossl::SslImpl;
 #[cfg(feature = "default")]
 use crate::rtls::SslImpl;
-use crate::session::Session;
 use crate::{HandlerFn, Server};
 use bufstream::BufStream;
 use lazy_static::lazy_static;
 use log::{debug, error, info};
+use mailin::SessionBuilder;
 use scoped_threadpool::Pool;
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::time::Duration;
@@ -18,13 +19,13 @@ lazy_static! {
 
 struct ServerState {
     listener: TcpListener,
-    session_builder: mailin::SessionBuilder,
+    session_builder: SessionBuilder,
     ssl: Option<SslImpl>,
     num_threads: u32,
 }
 
 pub(crate) fn serve(config: Server, handler: HandlerFn) -> Result<(), Error> {
-    let mut session_builder = mailin::SessionBuilder::new(config.name.clone());
+    let mut session_builder = SessionBuilder::new(config.name.clone());
     if config.ssl.is_some() {
         session_builder.enable_start_tls();
     }
@@ -63,17 +64,17 @@ fn run(name: &str, server_state: &ServerState, handler: HandlerFn) -> Result<(),
     Ok(())
 }
 
-fn start_session(
-    session_builder: &mailin::SessionBuilder,
+fn start_client(
+    session_builder: &SessionBuilder,
     remote: IpAddr,
     stream: BufStream<TcpStream>,
     ssl: Option<SslImpl>,
     handler: HandlerFn,
 ) -> Result<(), Error> {
-    let inner = session_builder.build(remote);
-    let mut session = Session::new(inner, stream, ssl);
-    session.greeting()?;
-    handler(&mut session);
+    let session = session_builder.build(remote);
+    let mut client = Client::new(session, stream, ssl);
+    client.greeting()?;
+    handler(&mut client);
     Ok(())
 }
 
@@ -91,7 +92,7 @@ fn handle_connection(
     stream.set_read_timeout(Some(*FIVE_MINUTES)).ok();
     stream.set_write_timeout(Some(*FIVE_MINUTES)).ok();
     let bufstream = BufStream::new(stream);
-    if let Err(err) = start_session(session_builder, remote, bufstream, ssl, handler) {
+    if let Err(err) = start_client(session_builder, remote, bufstream, ssl, handler) {
         error!("({}) {}", remote, err);
     }
 }

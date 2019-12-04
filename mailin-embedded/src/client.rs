@@ -2,7 +2,7 @@ use crate::rtls::{SslImpl, SslStream};
 use crate::Error;
 use bufstream::BufStream;
 use mailin::Response;
-use mailin::{Action, Event, State};
+use mailin::{Action, Event, Session, State};
 use std::io;
 use std::io::{BufRead, Write};
 use std::mem;
@@ -14,15 +14,15 @@ enum Stream {
     Empty,
 }
 
-pub struct Session {
-    inner: mailin::Session,
+pub struct Client {
+    session: Session,
     stream: Stream,
     line: Vec<u8>,
     ssl: Option<SslImpl>,
 }
 
-impl Session {
-    pub fn handle(&mut self, mut handler: impl FnMut(State) -> Response) {
+impl Client {
+    pub fn handle(&mut self, mut handler: impl FnMut(State, &mut Session) -> Response) {
         loop {
             self.line.clear();
             let read = match &mut self.stream {
@@ -34,11 +34,11 @@ impl Session {
                 Err(_) | Ok(0) => return,
                 _ => (),
             };
-            let response = match self.inner.process(&self.line) {
+            let response = match self.session.process(&self.line) {
                 Event::SendReponse(res) => res,
                 Event::ChangeState(state) => match state {
                     State::End => break,
-                    _ => handler(state),
+                    _ => handler(state, &mut self.session),
                 },
             };
             if let Err(_) = self.respond(&response) {
@@ -52,12 +52,12 @@ impl Session {
     }
 
     pub(crate) fn new(
-        inner: mailin::Session,
+        session: Session,
         stream: BufStream<TcpStream>,
         ssl: Option<SslImpl>,
     ) -> Self {
         Self {
-            inner,
+            session,
             stream: Stream::Unencrypted(stream),
             line: Vec::with_capacity(100),
             ssl,
@@ -65,7 +65,7 @@ impl Session {
     }
 
     pub(crate) fn greeting(&mut self) -> Result<(), Error> {
-        write_response(&mut self.stream, &self.inner.greeting())
+        write_response(&mut self.stream, &self.session.greeting())
     }
 
     fn respond(&mut self, res: &Response) -> Result<(), Error> {
@@ -102,7 +102,7 @@ impl Session {
                 } else {
                     Error::bail("Cannot upgrade to TLS without an SslAcceptor")?
                 };
-                self.inner.tls_active();
+                self.session.tls_active();
                 let buf_tls = BufStream::new(tls);
                 self.stream = Stream::Encrypted(buf_tls);
                 Ok(())

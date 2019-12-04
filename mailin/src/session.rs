@@ -58,30 +58,27 @@ impl SessionBuilder {
             start_tls_extension: self.start_tls_extension,
             state: None,
         };
-        session.state = Some(State::Idle(Idle {
-            ip: remote,
-            session: &mut session,
-        }));
+        session.state = Some(State::Idle(Idle { ip: remote }));
         session
     }
 }
 
 #[derive(Debug)]
-pub struct Session<'a> {
+pub struct Session {
     server_name: String,
     auth_mechanisms: Vec<AuthMechanism>,
     start_tls_extension: bool,
-    state: Option<State<'a>>,
+    state: Option<State>,
 }
 
 #[derive(Debug)]
-pub enum Event<'a> {
-    ChangeState(State<'a>),
+pub enum Event {
+    ChangeState(State),
     SendReponse(Response),
 }
 
-impl<'a> Session<'a> {
-    pub fn process(&'a mut self, line: &[u8]) -> Event {
+impl Session {
+    pub fn process(&mut self, line: &[u8]) -> Event {
         match parse(line) {
             Err(response) => Event::SendReponse(response),
             Ok(cmd) => {
@@ -103,7 +100,7 @@ impl<'a> Session<'a> {
         // TODO: implement
     }
 
-    fn handle_cmd(&'a mut self, prev_state: State<'a>, cmd: Cmd) -> Event {
+    fn handle_cmd(&mut self, prev_state: State, cmd: Cmd) -> Event {
         match (prev_state, cmd) {
             (State::Idle(idle), Cmd::Rset) => {
                 self.next_state(State::Idle(idle));
@@ -118,10 +115,8 @@ impl<'a> Session<'a> {
             ) => to_event(Mail::from_hello(hello, reverse_path, is8bit)),
             (State::Mail(_), Cmd::Rcpt { .. }) => to_event(State::End),
             (State::End, _) => to_event(State::End),
-            (state, Cmd::Helo { domain }) => {
-                to_event(Hello::from_state(state, self, false, domain))
-            }
-            (state, Cmd::Ehlo { domain }) => to_event(Hello::from_state(state, self, true, domain)),
+            (state, Cmd::Helo { domain }) => to_event(Hello::from_state(state, false, domain)),
+            (state, Cmd::Ehlo { domain }) => to_event(Hello::from_state(state, true, domain)),
             (state, Cmd::Rset) => {
                 self.next_state(Hello::from_rset(state));
                 Event::SendReponse(OK)
@@ -133,21 +128,21 @@ impl<'a> Session<'a> {
         }
     }
 
-    pub(crate) fn next_state<S>(&'a mut self, next: S)
+    pub(crate) fn next_state<S>(&mut self, next: S)
     where
-        S: Into<State<'a>>,
+        S: Into<State>,
     {
         self.state = Some(next.into());
     }
 
-    pub(crate) fn state(&'a self) -> Option<&'a State> {
+    pub(crate) fn state(&self) -> Option<&State> {
         self.state.as_ref()
     }
 }
 
-fn to_event<'a, S>(s: S) -> Event<'a>
+fn to_event<S>(s: S) -> Event
 where
-    S: Into<State<'a>> + 'a,
+    S: Into<State>,
 {
     let state: State = s.into();
     Event::ChangeState(state)

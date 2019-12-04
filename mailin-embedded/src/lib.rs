@@ -7,23 +7,23 @@
 //! use mailin_embedded::{Server, SslConfig, State, Error};
 //! # use std::sync::Arc;
 //!
-//! let server = Server::new();
+//! let mut server = Server::new();
 //! server
 //!    .with_name("example.com")
 //!    .with_ssl(SslConfig::None)?
-//!    .with_addr("127.0.0.1:25")?
-//!    .serve(Arc::new(|client| {
-//!         let mut counter = 0;
-//!         client.handle(|state, session| {
-//!              counter += 1;
-//!              match state {
-//!                  State::Hello(hello) if (hello.domain == "spam.com") => {
-//!                      hello.deny(session, "Bad domain")
-//!                  }
-//!                  state => state.ok(session),
-//!              }
-//!         });
-//!    }));
+//!    .with_addr("127.0.0.1:25")?;
+//! server.serve(Arc::new(|client| {
+//!    let mut counter = 0;
+//!    client.handle(|state, session| {
+//!        counter += 1;
+//!        match state {
+//!            State::Hello(hello) if (hello.domain == "spam.com") => {
+//!                hello.deny(session, "Bad domain")
+//!            }
+//!            state => state.ok(session),
+//!         }
+//!    });
+//! }));
 //! # Ok::<(), Error>(())
 //! ```
 
@@ -33,27 +33,27 @@
 /// Custom error type for mailin_embedded
 pub mod err;
 
+mod client;
 #[cfg(feature = "ossl")]
 mod ossl;
 #[cfg(feature = "default")]
 mod rtls;
 mod running;
-mod session;
 mod ssl;
 
+pub use crate::client::Client;
 pub use crate::err::Error;
 #[cfg(feature = "ossl")]
 use crate::ossl::SslImpl;
 #[cfg(feature = "default")]
 use crate::rtls::SslImpl;
-pub use crate::session::Session;
 pub use crate::ssl::SslConfig;
 pub use mailin::AuthMechanism;
 pub use mailin::State;
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 use std::sync::Arc;
 
-pub type HandlerFn = Arc<dyn Fn(&mut Session) + Send + Sync>;
+pub type HandlerFn = Arc<dyn Fn(&mut Client) + Send + Sync>;
 
 /// `Server` is used to configure and start the SMTP server
 pub struct Server {
@@ -134,7 +134,7 @@ impl Server {
     }
 
     /// Start the SMTP server and run forever
-    pub fn serve<F>(self, handler: HandlerFn) -> Result<(), Error> {
+    pub fn serve(self, handler: HandlerFn) -> Result<(), Error> {
         running::serve(self, handler)
     }
 }
