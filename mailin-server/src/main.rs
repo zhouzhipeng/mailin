@@ -4,7 +4,7 @@ use crate::store::MailStore;
 use chrono::Local;
 use failure::{format_err, Error};
 use getopts::Options;
-use mailin_embedded::{DataResult, HeloResult, Server, SslConfig};
+use mailin_embedded::{Client, Server, SslConfig, State};
 use mxdns::MxDns;
 use nix::unistd;
 use privdrop::PrivDrop;
@@ -19,6 +19,7 @@ use std::io;
 use std::io::Write;
 use std::net::{IpAddr, TcpListener};
 use std::path::Path;
+use std::sync::Arc;
 
 const DOMAIN: &str = "localhost";
 const DEFAULT_ADDRESS: &str = "127.0.0.1:8025";
@@ -38,6 +39,7 @@ const OPT_GROUP: &str = "group";
 const OPT_STATSD_SERVER: &str = "statsd-server";
 const OPT_STATSD_PREFIX: &str = "statsd-prefix";
 
+/*
 #[derive(Clone)]
 struct Handler<'a> {
     mxdns: &'a MxDns,
@@ -98,6 +100,7 @@ impl<'a> Handler<'a> {
         }
     }
 }
+ */
 
 fn setup_logger(log_dir: Option<String>) -> Result<(), Error> {
     let log_level = LevelFilter::Info;
@@ -186,12 +189,7 @@ fn main() -> Result<(), Error> {
         .opt_str(OPT_STATSD_SERVER)
         .map(|addr| statsd::Client::new(addr, &statsd_prefix))
         .transpose()?;
-    let handler = Handler {
-        mxdns: &mxdns,
-        statsd: statsd.as_ref(),
-        mailstore: MailStore::new(),
-    };
-    let mut server = Server::new(handler);
+    let mut server = Server::new();
     server
         .with_name(domain)
         .with_ssl(ssl_config)
@@ -219,5 +217,47 @@ fn main() -> Result<(), Error> {
     let log_directory = matches.opt_str(OPT_LOG);
     setup_logger(log_directory)?;
 
-    server.serve().map_err(|e| format_err!("{}", e))
+    let mailstore = MailStore::new();
+    server.serve(Arc::new(move |client| {
+        handle_client(&mxdns, statsd.as_ref(), &mailstore, client);
+    }));
+    Ok(())
+}
+
+fn handle_client(
+    mxdns: &MxDns,
+    statsd: Option<&statsd::Client>,
+    mailstore: &MailStore,
+    client: &mut Client,
+) {
+    client.handle(|state, session| match state {
+        State::Hello(h) => {
+            incr_stat(statsd, "helo");
+            // Does the reverse DNS match the forward dns?
+            let rdns = mxdns.fcrdns(h.ip);
+            match rdns {
+                Ok(ref res) if !res.is_confirmed() => {
+                    incr_stat(statsd, "fail.fcrdns");
+                    // h.bad_helo(session)
+                    h.ok(session)
+                }
+                _ => {
+                    if mxdns.is_blocked(h.ip).unwrap_or(false) {
+                        incr_stat(statsd, "fail.blocklist");
+                        // h.blocked_ip(session)
+                        h.ok(session)
+                    } else {
+                        h.ok(session)
+                    }
+                }
+            }
+        }
+        state => state.ok(session),
+    });
+}
+
+fn incr_stat(statsd: Option<&statsd::Client>, name: &str) {
+    for s in statsd.iter() {
+        s.incr(name);
+    }
 }

@@ -1,6 +1,7 @@
 use crate::rtls::{SslImpl, SslStream};
 use crate::Error;
 use bufstream::BufStream;
+use log::debug;
 use mailin::Response;
 use mailin::{Action, Event, Session, State};
 use std::io;
@@ -31,18 +32,22 @@ impl Client {
                 Stream::Empty => Err(io::ErrorKind::NotConnected.into()),
             };
             match read {
-                Err(_) | Ok(0) => return,
+                Err(e) => {
+                    debug!("Failed read: {}", e);
+                    return;
+                }
+                Ok(0) => return,
                 _ => (),
             };
             let response = match self.session.process(&self.line) {
-                Event::SendReponse(res) => res,
+                Event::SendResponse(res) => res,
                 Event::ChangeState(state) => match state {
                     State::End => break,
                     _ => handler(state, &mut self.session),
                 },
             };
-            if let Err(_) = self.respond(&response) {
-                // TODO: log errors
+            if let Err(e) = self.respond(&response) {
+                debug!("Failed response: {}", e);
                 break;
             }
             if let Action::Close = response.action {
@@ -112,7 +117,6 @@ impl Client {
 }
 
 fn write_response(writer: &mut Stream, res: &Response) -> Result<(), Error> {
-    // TODO: log error
     match writer {
         Stream::Unencrypted(s) => write(s, res),
         Stream::Encrypted(s) => write(s, res),
