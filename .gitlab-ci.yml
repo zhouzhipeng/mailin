@@ -24,7 +24,7 @@ run-build:
   image: rust:latest
   script:
     - rustc --version && cargo --version
-    - cargo test --features no-network-tests
+    - cargo test
 
  
 release-build:
