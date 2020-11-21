@@ -422,7 +422,7 @@ mod tests {
     #[test]
     fn reverse_lookup() {
         let mxdns = build_mx_dns();
-        let addr = "116.203.3.137".parse::<IpAddr>().unwrap();
+        let addr = "116.203.10.186".parse::<IpAddr>().unwrap();
         let reverse = mxdns.reverse_dns(addr).unwrap().unwrap();
         assert_eq!(reverse, "mail.alienscience.org.");
     }

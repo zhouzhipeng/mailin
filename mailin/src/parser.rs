@@ -6,8 +6,8 @@ use nom::combinator::{map, map_res, value};
 use nom::sequence::{pair, preceded, separated_pair, terminated};
 use nom::IResult;
 
-use crate::smtp::{Cmd, Credentials, MISSING_PARAMETER, SYNTAX_ERROR};
-use crate::Response;
+use crate::response::*;
+use crate::smtp::{Cmd, Credentials};
 use std::str;
 
 //----- Parser -----------------------------------------------------------------
@@ -227,5 +227,4 @@ mod tests {
             ),
         };
     }
-
 }

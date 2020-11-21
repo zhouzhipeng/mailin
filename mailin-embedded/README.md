@@ -21,3 +21,27 @@ server.with_name("example.com")
 server.serve_forever();
 ```
 
+# SSL
+
+The `mailin-embedded` library requires an SSL implementation. The SSL implementation is selected with a feature:
+
+Using RustTLS (recommended, so far no compatibility problems):
+
+```
+$ cargo build --features "rtls"
+```
+
+Using OpenSSL (with [Mozilla modern](https://wiki.mozilla.org/Security/Server_Side_TLS)):
+
+```
+$ cargo build --features "ossl"
+```
+
+The SSL configuration for both of these libraries is quite strict and might not work with some older Email servers. However, until now, I have only seen problems with spammers and no problems with real email servers.
+
+
+# Using in Cargo.toml
+
+```
+mailin-embedded = { version="^0" features=["rtls"] }
+```

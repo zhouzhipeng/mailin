@@ -9,10 +9,8 @@ mailin-embedded = { features=["rtls"], path="../mailin-embedded" }
 mxdns = { path="../mxdns" }
 mime-event = { path="../mime-event" }
 log = "0.4"
-simplelog = "0.7"
+simplelog = "0.9.0"
 chrono = "0.4"
 getopts = "0.2"
 failure = "0.1"
-privdrop = "0.3"
-nix = "0.15"
-statsd = "0.13"
+statsd = "0.14"

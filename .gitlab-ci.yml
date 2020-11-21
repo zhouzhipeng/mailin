@@ -3,7 +3,6 @@ image: rust:latest
 
 variables:
   CARGO_HOME: $CI_PROJECT_DIR/cargo
-  DEPLOY_TARGET: /home/gitlab-runner/deploy/mailin/mailin
  
 cache:
   key: "$CI_JOB_NAME"
@@ -38,17 +37,19 @@ release-build:
   only:
     - master
 
-deploy-master:
+deploy:
+  image: registry.gitlab.com/alienscience/docker-rpmbd:latest
   stage: deploy
-  tags:
-    - coward
   dependencies:
     - release-build
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "$SSH_DEPLOY_KEY" | ssh-add -
   script:
-    - rm -f $DEPLOY_TARGET
-    - cp target/release/mailin-server $DEPLOY_TARGET
-    - sudo systemctl restart mailin
-  environment:
-    name: coward
+    - mailin-server/deploy/rpmbuild/build.sh
+    - >
+      SSH_DEPLOY_USER=$SSH_DEPLOY_USER
+      SSH_DEPLOY_PORT=$SSH_DEPLOY_PORT
+      mailin-server/deploy/deploy.sh
   only:
     - master

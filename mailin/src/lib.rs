@@ -40,16 +40,18 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-use lazy_static::lazy_static;
-use log::trace;
 use std::io;
-use std::io::Write;
 use std::net::IpAddr;
 mod fsm;
 mod parser;
+/// Response contains a selection of SMTP responses for use in handlers.
+pub mod response;
 mod smtp;
 
-pub use crate::smtp::{Session, SessionBuilder};
+pub use crate::{
+    response::{Action, Response},
+    smtp::{Session, SessionBuilder},
+};
 
 /// A `Handler` makes decisions about incoming mail commands.
 ///
@@ -60,42 +62,43 @@ pub use crate::smtp::{Session, SessionBuilder};
 ///
 /// # Examples
 /// ```
-/// # use mailin::{Handler, HeloResult, RcptResult, DataResult};
+/// # use mailin::{Handler, Response};
+/// # use mailin::response::{OK, BAD_HELLO, NO_MAILBOX};
 ///
 /// # use std::net::IpAddr;
 /// # struct MyHandler{};
 /// impl Handler for MyHandler {
-///     fn helo(&mut self, ip: IpAddr, domain: &str) -> HeloResult {
+///     fn helo(&mut self, ip: IpAddr, domain: &str) -> Response {
 ///        if domain == "this.is.spam.com" {
-///            HeloResult::BadHelo
+///            OK
 ///        } else {
-///            HeloResult::Ok
+///            BAD_HELLO
 ///        }
 ///     }
 ///
-///     fn rcpt(&mut self, to: &str) -> RcptResult {
+///     fn rcpt(&mut self, to: &str) -> Response {
 ///        if to == "alienscience" {
-///            RcptResult::Ok
+///            OK
 ///        } else {
-///            RcptResult::NoMailbox
+///            NO_MAILBOX
 ///        }
 ///     }
 /// }
 /// ```
 pub trait Handler {
     /// Called when a client sends a ehlo or helo message
-    fn helo(&mut self, _ip: IpAddr, _domain: &str) -> HeloResult {
-        HeloResult::Ok
+    fn helo(&mut self, _ip: IpAddr, _domain: &str) -> Response {
+        response::OK
     }
 
     /// Called when a mail message is started
-    fn mail(&mut self, _ip: IpAddr, _domain: &str, _from: &str) -> MailResult {
-        MailResult::Ok
+    fn mail(&mut self, _ip: IpAddr, _domain: &str, _from: &str) -> Response {
+        response::OK
     }
 
     /// Called when a mail recipient is set
-    fn rcpt(&mut self, _to: &str) -> RcptResult {
-        RcptResult::Ok
+    fn rcpt(&mut self, _to: &str) -> Response {
+        response::OK
     }
 
     /// Called when a data command is received
@@ -105,8 +108,8 @@ pub trait Handler {
         _from: &str,
         _is8bit: bool,
         _to: &[String],
-    ) -> DataResult {
-        DataResult::Ok
+    ) -> Response {
+        response::OK
     }
 
     /// Called when a data buffer is received
@@ -115,8 +118,8 @@ pub trait Handler {
     }
 
     /// Called at the end of receiving data
-    fn data_end(&mut self) -> DataResult {
-        DataResult::Ok
+    fn data_end(&mut self) -> Response {
+        response::OK
     }
 
     /// Called when a plain authentication request is received
@@ -125,12 +128,12 @@ pub trait Handler {
         _authorization_id: &str,
         _authentication_id: &str,
         _password: &str,
-    ) -> AuthResult {
-        AuthResult::InvalidCredentials
+    ) -> Response {
+        response::INVALID_CREDENTIALS
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 /// Supported authentication mechanisms
 pub enum AuthMechanism {
     /// Plain user/password over TLS
@@ -146,280 +149,11 @@ impl AuthMechanism {
     }
 }
 
-//------ Response --------------------------------------------------------------
-
-/// Response contains a code and message to be sent back to the client
-#[derive(Clone, Debug)]
-pub struct Response {
-    /// The three digit response code
-    pub code: u16,
-    message: Message,
-    /// Is the response an error response?
-    pub is_error: bool,
-    /// The action to take after sending the response to the client
-    pub action: Action,
-    ehlo_ok: bool, // This is an EHLO OK response
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum Message {
-    Dynamic(String, Vec<&'static str>),
-    Fixed(&'static str),
-    Empty,
-}
-
-/// Action indicates the recommended action to take on a response
-#[derive(PartialEq, Clone, Debug)]
-pub enum Action {
-    /// Send the response and close the connection
-    Close,
-    /// Upgrade the connection to use TLS
-    UpgradeTls,
-    /// Do not reply, wait for the client to send more data
-    NoReply,
-    /// Send a reply and keep the connection open
-    Reply,
-}
-
-impl Response {
-    // A response that uses a fixed static string
-    pub(crate) fn fixed(code: u16, message: &'static str) -> Self {
-        let action = match code {
-            221 | 421 => Action::Close,
-            _ => Action::Reply,
-        };
-        Self::fixed_action(code, message, action)
-    }
-
-    // A response that uses a fixed static string and a given action
-    pub(crate) fn fixed_action(code: u16, message: &'static str, action: Action) -> Self {
-        Self {
-            code,
-            message: Message::Fixed(message),
-            is_error: (code < 200 || code >= 400),
-            action,
-            ehlo_ok: false,
-        }
-    }
-
-    pub(crate) fn ehlo_ok() -> Self {
-        Self {
-            code: 250,
-            message: Message::Fixed(""),
-            is_error: false,
-            action: Action::Reply,
-            ehlo_ok: true,
-        }
-    }
-
-    // A response that is built dynamically and can be a multiline response
-    pub(crate) fn dynamic(code: u16, head: String, tail: Vec<&'static str>) -> Self {
-        Self {
-            code,
-            message: Message::Dynamic(head, tail),
-            is_error: false,
-            action: Action::Reply,
-            ehlo_ok: false,
-        }
-    }
-
-    // An empty response
-    pub(crate) fn empty() -> Self {
-        Self {
-            code: 0,
-            message: Message::Empty,
-            is_error: false,
-            action: Action::NoReply,
-            ehlo_ok: false,
-        }
-    }
-
-    /// Write the response to the given writer
-    pub fn write_to(&self, out: &mut dyn Write) -> io::Result<()> {
-        match self.message {
-            Message::Dynamic(ref head, ref tail) => {
-                if tail.is_empty() {
-                    write!(out, "{} {}\r\n", self.code, head)?;
-                } else {
-                    write!(out, "{}-{}\r\n", self.code, head)?;
-                    for i in 0..tail.len() {
-                        if tail.len() > 1 && i < tail.len() - 1 {
-                            write!(out, "{}-{}\r\n", self.code, tail[i])?;
-                        } else {
-                            write!(out, "{} {}\r\n", self.code, tail[i])?;
-                        }
-                    }
-                }
-            }
-            Message::Fixed(s) => write!(out, "{} {}\r\n", self.code, s)?,
-            Message::Empty => (),
-        };
-        Ok(())
-    }
-
-    // Log the response
-    fn log(&self) {
-        match self.message {
-            Message::Empty => (),
-            _ => {
-                let mut buf = Vec::new();
-                let _ = self.write_to(&mut buf);
-                trace!("< {}", String::from_utf8_lossy(&buf));
-            }
-        }
-    }
-}
-
-//------ Results of Handler calls ----------------------------------------------
-
-/// `HeloResult` is the result of an smtp HELO or EHLO command
-pub enum HeloResult {
-    /// Helo successful
-    Ok,
-    /// Return to indicate that Helo verification failed
-    BadHelo,
-    /// Return to indicate the ip address is on blocklists
-    BlockedIp,
-}
-
-impl From<HeloResult> for Response {
-    fn from(v: HeloResult) -> Response {
-        match v {
-            HeloResult::Ok => OK.clone(),
-            HeloResult::BadHelo => BAD_HELLO.clone(),
-            HeloResult::BlockedIp => BLOCKED_IP.clone(),
-        }
-    }
-}
-
-/// `MailResult` is the result of an smtp MAIL command
-pub enum MailResult {
-    /// Mail command successful
-    Ok,
-    /// Service not available, closing transmission channel
-    NoService,
-    /// Requested action aborted: local error in processing
-    InternalError,
-    /// Requested action not taken: insufficient system storage
-    OutOfSpace,
-    /// Authentication required
-    AuthRequired,
-    /// Exceeded storage allocation
-    NoStorage,
-}
-
-impl From<MailResult> for Response {
-    fn from(v: MailResult) -> Response {
-        match v {
-            MailResult::Ok => OK.clone(),
-            MailResult::NoService => NO_SERVICE.clone(),
-            MailResult::InternalError => INTERNAL_ERROR.clone(),
-            MailResult::OutOfSpace => OUT_OF_SPACE.clone(),
-            MailResult::AuthRequired => AUTH_REQUIRED.clone(),
-            MailResult::NoStorage => NO_STORAGE.clone(),
-        }
-    }
-}
-
-/// `RcptResult` is the result of an smtp RCPT command
-pub enum RcptResult {
-    /// Recipient is valid
-    Ok,
-    /// No mailbox with the given name exists
-    NoMailbox,
-    /// The mailbox exceeded storage allocation
-    NoStorage,
-    /// The Mailbox name not allowed
-    BadMailbox,
-    /// Internal server error
-    InternalError,
-    /// System out of space
-    OutOfSpace,
-    /// <domain> Service not available, closing transmission channel
-    NoService,
-}
-
-impl From<RcptResult> for Response {
-    fn from(v: RcptResult) -> Response {
-        match v {
-            RcptResult::Ok => OK.clone(),
-            RcptResult::NoMailbox => NO_MAILBOX.clone(),
-            RcptResult::NoStorage => NO_STORAGE.clone(),
-            RcptResult::BadMailbox => BAD_MAILBOX.clone(),
-            RcptResult::InternalError => INTERNAL_ERROR.clone(),
-            RcptResult::OutOfSpace => OUT_OF_SPACE.clone(),
-            RcptResult::NoService => NO_SERVICE.clone(),
-        }
-    }
-}
-
-/// `DataResult` is the result of an smtp DATA command
-pub enum DataResult {
-    /// Message accepted, ready to write
-    Ok,
-    /// Internal server error
-    InternalError,
-    /// Transaction failed
-    TransactionFailed,
-    /// <domain> Service not available, closing transmission channel
-    NoService,
-}
-
-impl From<DataResult> for Response {
-    fn from(v: DataResult) -> Response {
-        match v {
-            DataResult::Ok => OK.clone(),
-            DataResult::InternalError => INTERNAL_ERROR.clone(),
-            DataResult::TransactionFailed => TRANSACTION_FAILED.clone(),
-            DataResult::NoService => NO_SERVICE.clone(),
-        }
-    }
-}
-
-/// `AuthResult` is the result of authenticating a smtp session
-pub enum AuthResult {
-    /// Authentication successful
-    Ok,
-    /// Temporary authentication failure
-    TemporaryFailure,
-    /// Invalid or insufficient credentials
-    InvalidCredentials,
-}
-
-impl From<AuthResult> for Response {
-    fn from(v: AuthResult) -> Response {
-        match v {
-            AuthResult::Ok => AUTH_OK.clone(),
-            AuthResult::TemporaryFailure => TEMP_AUTH_FAILURE.clone(),
-            AuthResult::InvalidCredentials => INVALID_CREDENTIALS.clone(),
-        }
-    }
-}
-
-lazy_static! {
-    static ref AUTH_OK: Response = Response::fixed(235, "Authentication succeeded");
-    static ref OK: Response = Response::fixed(250, "OK");
-    static ref NO_SERVICE: Response =
-        Response::fixed(421, "Service not available, closing connection");
-    static ref INTERNAL_ERROR: Response =
-        Response::fixed(451, "Aborted: local error in processing");
-    static ref OUT_OF_SPACE: Response = Response::fixed(452, "Insufficient system storage");
-    static ref TEMP_AUTH_FAILURE: Response =
-        Response::fixed(454, "Temporary authentication failure");
-    static ref NO_STORAGE: Response = Response::fixed(552, "Exceeded storage allocation");
-    static ref AUTH_REQUIRED: Response = Response::fixed(530, "Authentication required");
-    static ref INVALID_CREDENTIALS: Response = Response::fixed(535, "Invalid credentials");
-    static ref NO_MAILBOX: Response = Response::fixed(550, "Mailbox unavailable");
-    static ref BAD_HELLO: Response = Response::fixed(550, "Bad HELO");
-    static ref BLOCKED_IP: Response = Response::fixed(550, "IP address on blocklists");
-    static ref BAD_MAILBOX: Response = Response::fixed(553, "Mailbox name not allowed");
-    static ref TRANSACTION_FAILED: Response = Response::fixed(554, "Transaction failed");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
+    use crate::response::*;
+    use std::io::{Cursor, Write};
     use std::net::Ipv4Addr;
 
     struct TestHandler {
@@ -440,28 +174,28 @@ mod tests {
     }
 
     impl<'a> Handler for &'a mut TestHandler {
-        fn helo(&mut self, ip: IpAddr, domain: &str) -> HeloResult {
+        fn helo(&mut self, ip: IpAddr, domain: &str) -> Response {
             assert_eq!(self.ip, ip);
             assert_eq!(self.domain, domain);
             self.helo_called = true;
-            HeloResult::Ok
+            OK
         }
 
         // Called when a mail message is started
-        fn mail(&mut self, ip: IpAddr, domain: &str, from: &str) -> MailResult {
+        fn mail(&mut self, ip: IpAddr, domain: &str, from: &str) -> Response {
             assert_eq!(self.ip, ip);
             assert_eq!(self.domain, domain);
             assert_eq!(self.from, from);
             self.mail_called = true;
-            MailResult::Ok
+            OK
         }
 
         // Called when a mail recipient is set
-        fn rcpt(&mut self, to: &str) -> RcptResult {
+        fn rcpt(&mut self, to: &str) -> Response {
             let valid_to = self.to.iter().any(|elem| elem == to);
             assert!(valid_to, "Invalid to address");
             self.rcpt_called = true;
-            RcptResult::Ok
+            OK
         }
 
         // Called to start writing an email message to a writer
@@ -471,13 +205,13 @@ mod tests {
             from: &str,
             is8bit: bool,
             to: &[String],
-        ) -> DataResult {
+        ) -> Response {
             assert_eq!(self.domain, domain);
             assert_eq!(self.from, from);
             assert_eq!(self.to, to);
             assert_eq!(self.is8bit, is8bit);
             self.data_start_called = true;
-            DataResult::Ok
+            OK
         }
 
         fn data(&mut self, buf: &[u8]) -> io::Result<()> {
@@ -485,11 +219,11 @@ mod tests {
             self.cursor.write(buf).map(|_| ())
         }
 
-        fn data_end(&mut self) -> DataResult {
+        fn data_end(&mut self) -> Response {
             self.data_end_called = true;
             let actual_data = self.cursor.get_ref();
             assert_eq!(actual_data, &self.expected_data);
-            DataResult::Ok
+            OK
         }
     }
 

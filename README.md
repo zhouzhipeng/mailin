@@ -2,6 +2,8 @@
 
 This repository contains libraries for writing SMTP servers in Rust.
 
+Send an email to `mailin@spamtastic.cc` to try out an example server.
+
 ## Directory structure
 
 ### mailin

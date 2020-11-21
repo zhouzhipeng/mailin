@@ -2,30 +2,9 @@ use std::net::IpAddr;
 use std::str;
 
 use crate::fsm::StateMachine;
-use crate::{Action, AuthMechanism, Handler, Response};
+use crate::response::*;
+use crate::{AuthMechanism, Handler};
 use either::{Left, Right};
-use lazy_static::lazy_static;
-use ternop::ternary;
-
-//------ Responses -------------------------------------------------------------
-
-lazy_static! {
-    pub static ref EMPTY_RESPONSE: Response = Response::empty();
-    pub static ref START_TLS: Response =
-        Response::fixed_action(220, "Ready to start TLS", Action::UpgradeTls);
-    pub static ref GOODBYE: Response = Response::fixed(221, "Goodbye");
-    pub static ref VERIFY_RESPONSE: Response = Response::fixed(252, "Maybe");
-    pub static ref START_DATA: Response =
-        Response::fixed(354, "Start mail input; end with <CRLF>.<CRLF>");
-    pub static ref INVALID_STATE: Response =
-        Response::fixed(421, "Internal service error, closing connection");
-    pub static ref SYNTAX_ERROR: Response = Response::fixed(500, "Syntax error");
-    pub static ref MISSING_PARAMETER: Response = Response::fixed(502, "Missing parameter");
-    pub static ref BAD_SEQUENCE_COMMANDS: Response =
-        Response::fixed(503, "Bad sequence of commands");
-    pub static ref AUTHENTICATION_REQUIRED: Response =
-        Response::fixed(530, "Authentication required");
-}
 
 //------ Types -----------------------------------------------------------------
 
@@ -78,8 +57,6 @@ pub struct Session<H: Handler> {
     name: String,
     handler: H,
     fsm: StateMachine,
-    start_tls_extension: bool,
-    auth_mechanisms: Vec<AuthMechanism>,
 }
 
 #[derive(Clone)]
@@ -87,7 +64,7 @@ pub struct Session<H: Handler> {
 ///
 /// # Examples
 /// ```
-/// # use mailin::{Session, SessionBuilder, Handler, Action, AuthMechanism};
+/// # use mailin::{Session, SessionBuilder, Handler, AuthMechanism};
 ///
 /// # use std::net::{IpAddr, Ipv4Addr};
 /// # struct EmptyHandler{};
@@ -134,9 +111,11 @@ impl SessionBuilder {
         Session {
             name: self.name.clone(),
             handler,
-            fsm: StateMachine::new(remote, &self.auth_mechanisms, self.start_tls_extension),
-            start_tls_extension: self.start_tls_extension,
-            auth_mechanisms: self.auth_mechanisms.clone(),
+            fsm: StateMachine::new(
+                remote,
+                self.auth_mechanisms.clone(),
+                self.start_tls_extension,
+            ),
         }
     }
 }
@@ -149,7 +128,6 @@ impl<H: Handler> Session<H> {
 
     /// STARTTLS active
     pub fn tls_active(&mut self) {
-        self.start_tls_extension = false;
         self.command(Cmd::StartedTls);
     }
 
@@ -179,11 +157,9 @@ impl<H: Handler> Session<H> {
     /// assert_eq!(&msg, b"250 OK\r\n");
     /// ```
     pub fn process(&mut self, line: &[u8]) -> Response {
+        // TODO: process within fsm
         let response = match self.fsm.process_line(&mut self.handler, line) {
-            Left(cmd) => {
-                let res = self.command(cmd);
-                self.fill_response(res)
-            }
+            Left(cmd) => self.command(cmd),
             Right(res) => res,
         };
         response.log();
@@ -193,22 +169,6 @@ impl<H: Handler> Session<H> {
     fn command(&mut self, cmd: Cmd) -> Response {
         self.fsm.command(&mut self.handler, cmd)
     }
-
-    fn fill_response(&self, res: Response) -> Response {
-        ternary!(res.ehlo_ok, self.ehlo_response(), res)
-    }
-
-    fn ehlo_response(&self) -> Response {
-        let mut extensions = vec!["8BITMIME"];
-        if self.start_tls_extension {
-            extensions.push("STARTTLS");
-        } else {
-            for auth in &self.auth_mechanisms {
-                extensions.push(auth.extension());
-            }
-        }
-        Response::dynamic(250, format!("{} offers extensions:", self.name), extensions)
-    }
 }
 
 //----- Tests ------------------------------------------------------------------
@@ -217,8 +177,8 @@ impl<H: Handler> Session<H> {
 mod tests {
     use super::*;
     use crate::fsm::SmtpState;
-    use crate::{Action, AuthResult, Message};
     use std::net::Ipv4Addr;
+    use ternop::ternary;
 
     struct EmptyHandler {}
     impl Handler for EmptyHandler {}
@@ -363,11 +323,11 @@ mod tests {
             authorization_id: &str,
             authentication_id: &str,
             password: &str,
-        ) -> AuthResult {
+        ) -> Response {
             ternary!(
                 authorization_id == "test" && authentication_id == "test" && password == "1234",
-                AuthResult::Ok,
-                AuthResult::InvalidCredentials
+                AUTH_OK,
+                INVALID_CREDENTIALS
             )
         }
     }
@@ -433,10 +393,9 @@ mod tests {
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
         let res = session.process(b"auth plain\r\n");
         assert_eq!(res.code, 334);
-        match res.message {
-            Message::Fixed("") => {}
-            _ => assert!(false, "Server did not send empty challenge"),
-        };
+        if res != EMPTY_AUTH_CHALLENGE {
+            assert!(false, "Server did not send empty challenge");
+        }
         assert_state!(session.fsm.current_state(), SmtpState::Auth);
         let res = session.process(b"dGVzdAB0ZXN0ADEyMzQ=\r\n");
         assert_eq!(res.code, 235);

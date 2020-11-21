@@ -1,13 +1,8 @@
 use crate::parser::{decode_sasl_plain, parse, parse_auth_response};
-use crate::smtp::{
-    Cmd, BAD_SEQUENCE_COMMANDS, EMPTY_RESPONSE, GOODBYE, INVALID_STATE, START_DATA, START_TLS,
-    VERIFY_RESPONSE,
-};
+use crate::response::*;
 
-use crate::{
-    Action, AuthMechanism, AuthResult, DataResult, Handler, HeloResult, Response, BAD_HELLO, OK,
-    TRANSACTION_FAILED,
-};
+use crate::smtp::Cmd;
+use crate::{AuthMechanism, Handler, Response};
 use either::*;
 use log::{error, trace};
 use std::borrow::BorrowMut;
@@ -123,7 +118,7 @@ fn unhandled(current: Box<dyn State>) -> (Response, Option<Box<dyn State>>) {
 }
 
 fn handle_rset(fsm: &StateMachine, domain: &str) -> (Response, Option<Box<dyn State>>) {
-    match fsm.auth {
+    match fsm.auth_state {
         AuthState::Unavailable => (
             OK.clone(),
             Some(Box::new(Hello {
@@ -145,7 +140,7 @@ fn handle_helo(
     handler: &mut dyn Handler,
     domain: &str,
 ) -> (Response, Option<Box<dyn State>>) {
-    match fsm.auth {
+    match fsm.auth_state {
         AuthState::Unavailable => {
             let res = Response::from(handler.helo(fsm.ip, domain));
             next_state(current, res, || {
@@ -167,11 +162,11 @@ fn handle_ehlo(
     handler: &mut dyn Handler,
     domain: &str,
 ) -> (Response, Option<Box<dyn State>>) {
-    let res = match handler.helo(fsm.ip, domain) {
-        HeloResult::Ok => Response::ehlo_ok(),
-        helo_res => Response::from(helo_res),
-    };
-    match fsm.auth {
+    let mut res = handler.helo(fsm.ip, domain);
+    if res.code == 250 {
+        res = fsm.ehlo_response();
+    }
+    match fsm.auth_state {
         AuthState::Unavailable => next_state(current, res, || {
             Box::new(Hello {
                 domain: domain.to_owned(),
@@ -193,10 +188,11 @@ fn authenticate(
     password: &str,
 ) -> Response {
     let auth_res = handler.auth_plain(authorization_id, authentication_id, password);
-    fsm.auth = match auth_res {
-        AuthResult::Ok => AuthState::Authenticated,
-        _ => AuthState::RequiresAuth,
-    };
+    fsm.auth_state = ternary!(
+        auth_res.code == 235,
+        AuthState::Authenticated,
+        AuthState::RequiresAuth
+    );
     Response::from(auth_res)
 }
 
@@ -300,7 +296,7 @@ impl State for HelloAuth {
             Cmd::AuthPlainEmpty if fsm.allow_auth_plain() => {
                 let domain = self.domain.clone();
                 (
-                    Response::fixed(334, ""),
+                    EMPTY_AUTH_CHALLENGE,
                     Some(Box::new(Auth {
                         domain,
                         mechanism: AuthMechanism::Plain,
@@ -431,15 +427,13 @@ impl State for Rcpt {
     ) -> (Response, Option<Box<dyn State>>) {
         match cmd {
             Cmd::Data => {
-                let res = match handler.data_start(
+                let res = handler.data_start(
                     &self.domain,
                     &self.reverse_path,
                     self.is8bit,
                     &self.forward_path,
-                ) {
-                    DataResult::Ok => START_DATA.clone(),
-                    r => Response::from(r),
-                };
+                );
+                let res = ternary!(res.is_error, res, START_DATA);
                 transform_state(self, res, |s| Box::new(Data { domain: s.domain }))
             }
             Cmd::Rcpt { forward_path } => {
@@ -515,33 +509,30 @@ impl State for Data {
 
 pub(crate) struct StateMachine {
     ip: IpAddr,
-    auth: AuthState,
+    auth_mechanisms: Vec<AuthMechanism>,
+    auth_state: AuthState,
     tls: TlsState,
     smtp: Option<Box<dyn State>>,
     auth_plain: bool,
 }
 
 impl StateMachine {
-    pub fn new(ip: IpAddr, auth_mechanisms: &[AuthMechanism], allow_start_tls: bool) -> Self {
-        let auth = ternary!(
+    pub fn new(ip: IpAddr, auth_mechanisms: Vec<AuthMechanism>, allow_start_tls: bool) -> Self {
+        let auth_state = ternary!(
             auth_mechanisms.is_empty(),
             AuthState::Unavailable,
             AuthState::RequiresAuth
         );
         let tls = ternary!(allow_start_tls, TlsState::Inactive, TlsState::Unavailable);
-        let mut ret = Self {
+        let auth_plain = auth_mechanisms.contains(&AuthMechanism::Plain);
+        Self {
             ip,
-            auth,
+            auth_mechanisms,
+            auth_state,
             tls,
             smtp: Some(Box::new(Idle {})),
-            auth_plain: false,
-        };
-        for auth_mechanism in auth_mechanisms {
-            match auth_mechanism {
-                AuthMechanism::Plain => ret.auth_plain = true,
-            }
+            auth_plain,
         }
-        ret
     }
 
     // Respond and change state with the given command
@@ -572,6 +563,18 @@ impl StateMachine {
     pub fn current_state(&self) -> SmtpState {
         let id = self.smtp.as_ref().map(|s| s.id());
         id.unwrap_or(SmtpState::Invalid)
+    }
+
+    fn ehlo_response(&self) -> Response {
+        let mut extensions = vec!["8BITMIME"];
+        if self.tls == TlsState::Inactive {
+            extensions.push("STARTTLS");
+        } else {
+            for auth in &self.auth_mechanisms {
+                extensions.push(auth.extension());
+            }
+        }
+        Response::dynamic(250, "server offers extensions:".to_string(), extensions)
     }
 
     fn allow_auth_plain(&self) -> bool {

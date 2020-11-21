@@ -40,9 +40,8 @@ use crate::ossl::SslImpl;
 #[cfg(feature = "rtls")]
 use crate::rtls::SslImpl;
 pub use crate::ssl::SslConfig;
-pub use mailin::{
-    AuthMechanism, AuthResult, DataResult, Handler, HeloResult, MailResult, RcptResult,
-};
+pub use mailin::response;
+pub use mailin::{Action, AuthMechanism, Handler, Response};
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 
 /// `Server` is used to configure and start the SMTP server

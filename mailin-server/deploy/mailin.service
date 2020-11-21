@@ -1,0 +1,19 @@
+[Unit]
+Description=Mailin SMTP server
+
+[Service]
+ExecStart=/usr/local/bin/mailin \
+    --server mail.spamtastic.cc \
+    --address 0.0.0.0:25 \
+    --log /home/mailin/logs \
+    --maildir /home/mailin/maildir \
+    --ssl-cert /etc/mailin/fullchain.pem \
+    --ssl-key /etc/mailin/privkey.pem \
+    --blocklist zen.spamhaus.org \
+    --blocklist dnsbl-1.uceprotect.net
+User=mailin
+Group=mailin
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

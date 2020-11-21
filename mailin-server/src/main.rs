@@ -4,25 +4,21 @@ use crate::store::MailStore;
 use chrono::Local;
 use failure::{format_err, Error};
 use getopts::Options;
-use mailin_embedded::{DataResult, HeloResult, Server, SslConfig};
+use log::error;
+use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, INTERNAL_ERROR, OK};
+use mailin_embedded::{Response, Server, SslConfig};
 use mxdns::MxDns;
-use nix::unistd;
-use privdrop::PrivDrop;
-use simplelog::{
-    CombinedLogger, Config, LevelFilter, SharedLogger, SimpleLogger, TermLogger, TerminalMode,
-    WriteLogger,
-};
+use simplelog::{CombinedLogger, Config, LevelFilter, TermLogger, TerminalMode, WriteLogger};
 use statsd;
 use std::env;
 use std::fs::File;
 use std::io;
 use std::io::Write;
-use std::net::{IpAddr, TcpListener};
+use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::path::Path;
 
 const DOMAIN: &str = "localhost";
 const DEFAULT_ADDRESS: &str = "127.0.0.1:8025";
-const DEFAULT_USER: &str = "mailin";
 
 // Command line option names
 const OPT_HELP: &str = "help";
@@ -33,8 +29,6 @@ const OPT_SSL_CERT: &str = "ssl-cert";
 const OPT_SSL_KEY: &str = "ssl-key";
 const OPT_SSL_CHAIN: &str = "ssl-chain";
 const OPT_BLOCKLIST: &str = "blocklist";
-const OPT_USER: &str = "user";
-const OPT_GROUP: &str = "group";
 const OPT_STATSD_SERVER: &str = "statsd-server";
 const OPT_STATSD_PREFIX: &str = "statsd-prefix";
 const OPT_MAILDIR: &str = "maildir";
@@ -47,21 +41,24 @@ struct Handler<'a> {
 }
 
 impl<'a> mailin_embedded::Handler for Handler<'a> {
-    fn helo(&mut self, ip: IpAddr, _domain: &str) -> HeloResult {
+    fn helo(&mut self, ip: IpAddr, _domain: &str) -> Response {
         self.incr_stat("helo");
+        if ip == Ipv4Addr::new(127, 0, 0, 1) {
+            return OK;
+        }
         // Does the reverse DNS match the forward dns?
         let rdns = self.mxdns.fcrdns(ip);
         match rdns {
             Ok(ref res) if !res.is_confirmed() => {
                 self.incr_stat("fail.fcrdns");
-                HeloResult::BadHelo
+                BAD_HELLO
             }
             _ => {
                 if self.mxdns.is_blocked(ip).unwrap_or(false) {
                     self.incr_stat("fail.blocklist");
-                    HeloResult::BlockedIp
+                    BLOCKED_IP
                 } else {
-                    HeloResult::Ok
+                    OK
                 }
             }
         }
@@ -73,10 +70,13 @@ impl<'a> mailin_embedded::Handler for Handler<'a> {
         _from: &str,
         _is8bit: bool,
         _to: &[String],
-    ) -> DataResult {
+    ) -> Response {
         match self.mailstore.start_message() {
-            Ok(()) => DataResult::Ok,
-            Err(_) => DataResult::InternalError,
+            Ok(()) => OK,
+            Err(err) => {
+                error!("Start message: {}", err);
+                INTERNAL_ERROR
+            }
         }
     }
 
@@ -84,10 +84,13 @@ impl<'a> mailin_embedded::Handler for Handler<'a> {
         self.mailstore.write_all(buf)
     }
 
-    fn data_end(&mut self) -> DataResult {
+    fn data_end(&mut self) -> Response {
         match self.mailstore.end_message() {
-            Ok(()) => DataResult::Ok,
-            Err(_) => DataResult::InternalError,
+            Ok(()) => OK,
+            Err(err) => {
+                error!("End message: {}", err);
+                INTERNAL_ERROR
+            }
         }
     }
 }
@@ -104,10 +107,6 @@ fn setup_logger(log_dir: Option<String>) -> Result<(), Error> {
     let log_level = LevelFilter::Info;
     // Try to create a terminal logger, if this fails use a simple logger to stdout
     let term_logger = TermLogger::new(log_level, Config::default(), TerminalMode::Stdout);
-    let quiet_logger: Box<dyn SharedLogger> = match term_logger {
-        Some(tlog) => tlog,
-        None => SimpleLogger::new(log_level, Config::default()),
-    };
     // Create a trace logger that writes SMTP interaction to file
     if let Some(dir) = log_dir {
         let log_path = Path::new(&dir);
@@ -116,12 +115,12 @@ fn setup_logger(log_dir: Option<String>) -> Result<(), Error> {
         let filepath = log_path.join(&filename);
         let file = File::create(&filepath)?;
         CombinedLogger::init(vec![
-            quiet_logger,
+            term_logger,
             WriteLogger::new(LevelFilter::Trace, Config::default(), file),
         ])
         .map_err(|err| format_err!("Cannot initialize logger: {}", err))
     } else {
-        CombinedLogger::init(vec![quiet_logger])
+        CombinedLogger::init(vec![term_logger])
             .map_err(|err| format_err!("Cannot initialize logger: {}", err))
     }
 }
@@ -147,8 +146,6 @@ fn main() -> Result<(), Error> {
         "ssl chain of trust for the certificate",
         "PEM_FILE",
     );
-    opts.optopt("", OPT_USER, "user to run as", "USER");
-    opts.optopt("", OPT_GROUP, "group to run as", "GROUP");
     opts.optopt(
         "",
         OPT_STATSD_SERVER,
@@ -208,18 +205,6 @@ fn main() -> Result<(), Error> {
         .unwrap_or_else(|| DEFAULT_ADDRESS.to_owned());
     let listener = TcpListener::bind(addr)?;
     server.with_tcp_listener(listener);
-
-    // Drop privileges if root
-    if unistd::geteuid().is_root() {
-        let user = matches
-            .opt_str(OPT_USER)
-            .unwrap_or_else(|| DEFAULT_USER.to_owned());
-        let mut privdrop = PrivDrop::default().user(user);
-        if let Some(group) = matches.opt_str(OPT_GROUP) {
-            privdrop = privdrop.group(group);
-        }
-        privdrop.apply()?;
-    }
 
     let log_directory = matches.opt_str(OPT_LOG);
     setup_logger(log_directory)?;
