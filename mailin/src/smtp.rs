@@ -182,6 +182,13 @@ mod tests {
 
     struct EmptyHandler {}
     impl Handler for EmptyHandler {}
+    struct DataHandler(Vec<u8>);
+    impl Handler for DataHandler {
+        fn data(&mut self, buf: &[u8]) -> std::io::Result<()> {
+            self.0.extend(buf);
+            Ok(())
+        }
+    }
 
     // Check that the state machine matches the given state pattern
     macro_rules! assert_state {
@@ -201,6 +208,11 @@ mod tests {
     fn new_session() -> Session<EmptyHandler> {
         let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         SessionBuilder::new("some.name").build(addr, EmptyHandler {})
+    }
+
+    fn new_data_session() -> Session<DataHandler> {
+        let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        SessionBuilder::new("some.name").build(addr, DataHandler(vec![]))
     }
 
     #[test]
@@ -245,7 +257,7 @@ mod tests {
 
     #[test]
     fn data() {
-        let mut session = new_session();
+        let mut session = new_data_session();
         session.process(b"helo a.domain\r\n");
         session.process(b"mail from:<ship@sea.com>\r\n");
         session.process(b"rcpt to:<fish@sea.com>\r\n");
@@ -256,6 +268,25 @@ mod tests {
         let res3 = session.process(b".\r\n");
         assert_eq!(res3.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
+        assert_eq!(&session.handler.0, b"Hello World\r\n");
+    }
+
+    #[test]
+    fn dot_stuffed_data() {
+        let mut session = new_data_session();
+        session.process(b"helo a.domain\r\n");
+        session.process(b"mail from:<ship@sea.com>\r\n");
+        session.process(b"rcpt to:<fish@sea.com>\r\n");
+        let res1 = session.process(b"data\r\n");
+        assert_eq!(res1.code, 354);
+        let res2 = session.process(b"Hello World\r\n");
+        assert_eq!(res2.action, Action::NoReply);
+        let res3 = session.process(b"..\r\n");
+        assert_eq!(res3.action, Action::NoReply);
+        let res3 = session.process(b".\r\n");
+        assert_eq!(res3.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
+        assert_eq!(&session.handler.0, b"Hello World\r\n.\r\n");
     }
 
     #[test]

@@ -489,12 +489,15 @@ impl State for Data {
     fn process_line<'a>(
         self: &mut Self,
         handler: &mut dyn Handler,
-        line: &'a [u8],
+        mut line: &'a [u8],
     ) -> Either<Cmd<'a>, Response> {
         if line == b".\r\n" {
             trace!("> _data_");
             Left(Cmd::DataEnd)
         } else {
+            if line.starts_with(b".") {
+                line = &line[1..];
+            }
             match handler.data(line) {
                 Ok(_) => Right(EMPTY_RESPONSE.clone()),
                 Err(e) => {
