@@ -23,3 +23,7 @@ lazy_static = "1.1"
 bufstream = "0.1"
 rustls = { version = "0.19", optional = true }
 openssl = { version = "0.10", optional = true }
+
+[package.metadata.docs.rs]
+features = ["rtls"]
+
