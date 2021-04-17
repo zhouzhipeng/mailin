@@ -15,7 +15,7 @@ edition = "2018"
 trust-dns = "0.17"
 tokio = "0.1"
 tokio-udp = "0.1"
-resolv-conf = "0.6"
+resolv-conf = "0.7"
 log = "0.4"
 
 [dev-dependencies]
