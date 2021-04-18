@@ -18,9 +18,6 @@ tokio-udp = "0.1"
 resolv-conf = "0.7"
 log = "0.4"
 
-[dev-dependencies]
-matches = "0.1"
-
 [features]
 # Some tests use DNS blocklists servers over the internet.
 # Set this feature to turn off the tests that require network access.

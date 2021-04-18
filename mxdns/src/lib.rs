@@ -351,7 +351,6 @@ fn to_ipv4(ip: IpAddr) -> Result<Ipv4Addr, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use matches::matches;
 
     fn blocklists() -> Vec<(&'static str, bool)> {
         // Tuples are (fqdn, has_nameserver)

@@ -604,7 +604,6 @@ name = "mxdns"
 version = "0.2.2"
 dependencies = [
  "log",
- "matches",
  "resolv-conf",
  "tokio",
  "tokio-udp",
