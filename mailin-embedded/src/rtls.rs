@@ -1,6 +1,5 @@
 use crate::ssl::{SslConfig, Stream};
 use crate::Error;
-use rustls;
 use rustls::{
     Certificate, NoClientAuth, PrivateKey, ServerConfig, ServerSession, StreamOwned, TLSError,
 };
@@ -87,6 +86,6 @@ fn load_key(filename: &str) -> Result<PrivateKey, Error> {
     pkcs8_keys
         .first()
         .or_else(|| rsa_keys.first())
-        .map(|k| k.clone())
+        .cloned()
         .ok_or_else(|| Error::new("No RSA or PKCS8 keys found"))
 }

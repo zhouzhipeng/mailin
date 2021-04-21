@@ -1,6 +1,5 @@
 use crate::ssl::{SslConfig, Stream};
 use crate::Error;
-use openssl;
 use openssl::error::ErrorStack;
 use openssl::pkey::PKey;
 use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslMethod, SslStream};
