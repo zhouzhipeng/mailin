@@ -1,4 +1,3 @@
-use base64;
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, tag_no_case, take_while1};
 use nom::character::is_alphanumeric;
@@ -15,17 +14,15 @@ use std::str;
 // Parse a line from the client
 pub fn parse(line: &[u8]) -> Result<Cmd, Response> {
     command(line).map(|r| r.1).map_err(|e| match e {
-        nom::Err::Incomplete(_) => MISSING_PARAMETER.clone(),
-        nom::Err::Error(_) => SYNTAX_ERROR.clone(),
-        nom::Err::Failure(_) => SYNTAX_ERROR.clone(),
+        nom::Err::Incomplete(_) => MISSING_PARAMETER,
+        nom::Err::Error(_) => SYNTAX_ERROR,
+        nom::Err::Failure(_) => SYNTAX_ERROR,
     })
 }
 
 // Parse an authentication response from the client
 pub fn parse_auth_response(line: &[u8]) -> Result<&[u8], Response> {
-    auth_response(line)
-        .map(|r| r.1)
-        .map_err(|_| SYNTAX_ERROR.clone())
+    auth_response(line).map(|r| r.1).map_err(|_| SYNTAX_ERROR)
 }
 
 fn command(buf: &[u8]) -> IResult<&[u8], Cmd> {
@@ -69,7 +66,7 @@ fn body_eq_8bit(buf: &[u8]) -> IResult<&[u8], bool> {
 }
 
 fn is8bitmime(buf: &[u8]) -> IResult<&[u8], bool> {
-    body_eq_8bit(buf).or_else(|_| Ok((buf, false)))
+    body_eq_8bit(buf).or(Ok((buf, false)))
 }
 
 fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
@@ -126,6 +123,7 @@ fn auth_response(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     terminated(take_while1(is_base64), tag("\r\n"))(buf)
 }
 
+#[allow(clippy::clippy::unnecessary_wraps)]
 fn empty(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     Ok((buf, b"" as &[u8]))
 }

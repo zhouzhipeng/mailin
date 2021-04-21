@@ -51,7 +51,7 @@ trait State {
     // Some states, e.g Data, need to process input lines differently and will
     // override this method.
     fn process_line<'a>(
-        self: &mut Self,
+        &mut self,
         _handler: &mut dyn Handler,
         line: &'a [u8],
     ) -> Either<Cmd<'a>, Response> {
@@ -106,7 +106,7 @@ fn default_handler(
     cmd: &Cmd,
 ) -> (Response, Option<Box<dyn State>>) {
     match *cmd {
-        Cmd::Quit => (GOODBYE.clone(), None),
+        Cmd::Quit => (GOODBYE, None),
         Cmd::Helo { domain } => handle_helo(current, fsm, handler, domain),
         Cmd::Ehlo { domain } => handle_ehlo(current, fsm, handler, domain),
         _ => unhandled(current),
@@ -114,19 +114,19 @@ fn default_handler(
 }
 
 fn unhandled(current: Box<dyn State>) -> (Response, Option<Box<dyn State>>) {
-    (BAD_SEQUENCE_COMMANDS.clone(), Some(current))
+    (BAD_SEQUENCE_COMMANDS, Some(current))
 }
 
 fn handle_rset(fsm: &StateMachine, domain: &str) -> (Response, Option<Box<dyn State>>) {
     match fsm.auth_state {
         AuthState::Unavailable => (
-            OK.clone(),
+            OK,
             Some(Box::new(Hello {
                 domain: domain.to_string(),
             })),
         ),
         _ => (
-            OK.clone(),
+            OK,
             Some(Box::new(HelloAuth {
                 domain: domain.to_string(),
             })),
@@ -142,7 +142,7 @@ fn handle_helo(
 ) -> (Response, Option<Box<dyn State>>) {
     match fsm.auth_state {
         AuthState::Unavailable => {
-            let res = Response::from(handler.helo(fsm.ip, domain));
+            let res = handler.helo(fsm.ip, domain);
             next_state(current, res, || {
                 Box::new(Hello {
                     domain: domain.to_owned(),
@@ -151,7 +151,7 @@ fn handle_helo(
         }
         _ => {
             // If authentication is required the client should be using EHLO
-            (BAD_HELLO.clone(), Some(current))
+            (BAD_HELLO, Some(current))
         }
     }
 }
@@ -193,7 +193,7 @@ fn authenticate(
         AuthState::Authenticated,
         AuthState::RequiresAuth
     );
-    Response::from(auth_res)
+    auth_res
 }
 
 //------------------------------------------------------------------------------
@@ -215,9 +215,9 @@ impl State for Idle {
         match cmd {
             Cmd::StartedTls => {
                 fsm.tls = TlsState::Active;
-                (EMPTY_RESPONSE.clone(), Some(self))
+                (EMPTY_RESPONSE, Some(self))
             }
-            Cmd::Rset => (OK.clone(), Some(self)),
+            Cmd::Rset => (OK, Some(self)),
             _ => default_handler(self, fsm, handler, &cmd),
         }
     }
@@ -246,7 +246,7 @@ impl State for Hello {
                 reverse_path,
                 is8bit,
             } => {
-                let res = Response::from(handler.mail(fsm.ip, &self.domain, reverse_path));
+                let res = handler.mail(fsm.ip, &self.domain, reverse_path);
                 transform_state(self, res, |s| {
                     Box::new(Mail {
                         domain: s.domain,
@@ -255,10 +255,8 @@ impl State for Hello {
                     })
                 })
             }
-            Cmd::StartTls if fsm.tls == TlsState::Inactive => {
-                (START_TLS.clone(), Some(Box::new(Idle {})))
-            }
-            Cmd::Vrfy => (VERIFY_RESPONSE.clone(), Some(self)),
+            Cmd::StartTls if fsm.tls == TlsState::Inactive => (START_TLS, Some(Box::new(Idle {}))),
+            Cmd::Vrfy => (VERIFY_RESPONSE, Some(self)),
             Cmd::Rset => handle_rset(fsm, &self.domain),
             _ => default_handler(self, fsm, handler, &cmd),
         }
@@ -284,7 +282,7 @@ impl State for HelloAuth {
         cmd: Cmd,
     ) -> (Response, Option<Box<dyn State>>) {
         match cmd {
-            Cmd::StartTls => (START_TLS.clone(), Some(Box::new(Idle {}))),
+            Cmd::StartTls => (START_TLS, Some(Box::new(Idle {}))),
             Cmd::AuthPlain {
                 ref authorization_id,
                 ref authentication_id,
@@ -354,7 +352,7 @@ impl State for Auth {
     }
 
     fn process_line<'a>(
-        self: &mut Self,
+        &mut self,
         _handler: &mut dyn Handler,
         line: &'a [u8],
     ) -> Either<Cmd<'a>, Response> {
@@ -387,7 +385,7 @@ impl State for Mail {
     ) -> (Response, Option<Box<dyn State>>) {
         match cmd {
             Cmd::Rcpt { forward_path } => {
-                let res = Response::from(handler.rcpt(forward_path));
+                let res = handler.rcpt(forward_path);
                 transform_state(self, res, |s| {
                     let fp = vec![forward_path.to_owned()];
                     Box::new(Rcpt {
@@ -437,7 +435,7 @@ impl State for Rcpt {
                 transform_state(self, res, |s| Box::new(Data { domain: s.domain }))
             }
             Cmd::Rcpt { forward_path } => {
-                let res = Response::from(handler.rcpt(forward_path));
+                let res = handler.rcpt(forward_path);
                 transform_state(self, res, |s| {
                     let mut fp = s.forward_path;
                     fp.push(forward_path.to_owned());
@@ -475,19 +473,15 @@ impl State for Data {
     ) -> (Response, Option<Box<dyn State>>) {
         match cmd {
             Cmd::DataEnd => {
-                let res = Response::from(handler.data_end());
-                transform_state(self, res, |s| {
-                    Box::new(Hello {
-                        domain: s.domain.clone(),
-                    })
-                })
+                let res = handler.data_end();
+                transform_state(self, res, |s| Box::new(Hello { domain: s.domain }))
             }
             _ => unhandled(self),
         }
     }
 
     fn process_line<'a>(
-        self: &mut Self,
+        &mut self,
         handler: &mut dyn Handler,
         mut line: &'a [u8],
     ) -> Either<Cmd<'a>, Response> {
@@ -499,10 +493,10 @@ impl State for Data {
                 line = &line[1..];
             }
             match handler.data(line) {
-                Ok(_) => Right(EMPTY_RESPONSE.clone()),
+                Ok(_) => Right(EMPTY_RESPONSE),
                 Err(e) => {
                     error!("Error saving message: {}", e);
-                    Right(TRANSACTION_FAILED.clone())
+                    Right(TRANSACTION_FAILED)
                 }
             }
         }
@@ -542,7 +536,7 @@ impl StateMachine {
     pub fn command(&mut self, handler: &mut dyn Handler, cmd: Cmd) -> Response {
         let (response, next_state) = match self.smtp.take() {
             Some(last_state) => last_state.handle(self, handler, cmd),
-            None => (INVALID_STATE.clone(), None),
+            None => (INVALID_STATE, None),
         };
         self.smtp = next_state;
         response
@@ -558,7 +552,7 @@ impl StateMachine {
                 let s: &mut dyn State = s.borrow_mut();
                 s.process_line(handler, line)
             }
-            None => Right(INVALID_STATE.clone()),
+            None => Right(INVALID_STATE),
         }
     }
 
