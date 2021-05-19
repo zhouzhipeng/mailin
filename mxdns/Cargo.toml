@@ -12,13 +12,12 @@ license = "MIT OR Apache-2.0"
 edition = "2018"
 
 [dependencies]
-trust-dns = "0.17"
-tokio = "0.1"
-tokio-udp = "0.1"
+thiserror = "1"
+dnssector = "0.2"
 resolv-conf = "0.7"
 log = "0.4"
+smol = "1.2.5"
+pin-project-lite = "0.2.6"
 
-[features]
-# Some tests use DNS blocklists servers over the internet.
-# Set this feature to turn off the tests that require network access.
-no-network-tests = []
+[dev-dependencies]
+display_bytes = "0.2"

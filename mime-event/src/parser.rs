@@ -5,7 +5,6 @@ use crate::line_parser;
 use std::collections::HashMap;
 use std::io;
 use std::io::Write;
-use std::panic;
 
 /// A Handler receives parser events
 pub trait Handler {
