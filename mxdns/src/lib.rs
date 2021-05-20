@@ -36,12 +36,8 @@ mod err;
 mod join_all;
 mod resolve;
 
-pub use crate::{
-    blocklist::BlockList,
-    err::{Error, Result},
-    join_all::join_all,
-    resolve::Resolve,
-};
+pub use crate::err::{Error, Result};
+use crate::{blocklist::BlockList, join_all::join_all, resolve::Resolve};
 use log::Level::Debug;
 use log::{debug, log_enabled};
 use resolv_conf;
