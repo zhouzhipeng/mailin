@@ -1,6 +1,6 @@
 [package]
 name = 'mxdns'
-version = '0.2.2'
+version = "0.3.0"
 authors = ['alienscience <saul@alienscience.org.uk>']
 description = 'DNS utilities for SMTP servers'
 homepage = 'https://gitlab.com/alienscience/mailin'
