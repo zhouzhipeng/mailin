@@ -75,10 +75,10 @@ impl MailStore {
         let mut filename = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_millis().to_string())
-            .unwrap_or("0000".to_string());
-        filename.push_str(".");
+            .unwrap_or_else(|_| "0000".to_string());
+        filename.push('.');
         filename.push_str(&process::id().to_string());
-        filename.push_str(".");
+        filename.push('.');
         let count = self.counter.fetch_add(1, Ordering::Relaxed);
         filename.push_str(&count.to_string());
         filename

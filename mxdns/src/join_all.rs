@@ -67,7 +67,7 @@ where
         }
         let ret = this
             .state
-            .into_iter()
+            .iter_mut()
             .map(|s| {
                 let mut item = FutureState::Empty { dummy: true };
                 mem::swap(s, &mut item);

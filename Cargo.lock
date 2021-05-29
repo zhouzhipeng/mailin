@@ -370,6 +370,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa333c37992bc9a2ca345cac27e7f150e97740a92daaeb488c98292d83329803"
 
 [[package]]
+name = "dnsclientx"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4a5503ee469de02111b4900b52f95e3035924f1647c173731651141a0444443"
+dependencies = [
+ "dnssector",
+ "maybe-async",
+ "smol",
+ "unic-idna-punycode",
+]
+
+[[package]]
 name = "dnssector"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -627,6 +639,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
+name = "maybe-async"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6007f9dad048e0a224f27ca599d669fca8cfa0dac804725aab542b2eb032bce6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "memchr"
 version = "2.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -657,7 +680,7 @@ name = "mxdns"
 version = "0.2.2"
 dependencies = [
  "display_bytes",
- "dnssector",
+ "dnsclientx",
  "log",
  "pin-project-lite",
  "resolv-conf",
@@ -1135,6 +1158,12 @@ dependencies = [
  "wasi",
  "winapi 0.3.9",
 ]
+
+[[package]]
+name = "unic-idna-punycode"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06feaedcbf9f1fc259144d833c0d630b8b15207b0486ab817d29258bc89f2f8a"
 
 [[package]]
 name = "unicode-width"

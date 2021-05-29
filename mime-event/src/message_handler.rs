@@ -32,7 +32,7 @@ impl Default for Target {
 }
 
 impl Handler for MessageHandler {
-    fn event<'a>(&mut self, ev: Event<'a>) {
+    fn event(&mut self, ev: Event) {
         match ev {
             Event::Start => (),
             Event::Header(h) => self.handle_header(h),
@@ -148,7 +148,7 @@ impl MessageHandler {
     }
 
     fn take_current(&mut self) -> Part {
-        mem::replace(&mut self.current_part, Part::default())
+        mem::take(&mut self.current_part)
     }
 
     fn end(&mut self) {
