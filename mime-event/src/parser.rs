@@ -9,7 +9,7 @@ use std::io::Write;
 /// A Handler receives parser events
 pub trait Handler {
     /// Method that receives parser events
-    fn event<'a>(&mut self, ev: Event<'a>);
+    fn event(&mut self, ev: Event);
 }
 
 #[derive(Clone, Copy, Debug)]

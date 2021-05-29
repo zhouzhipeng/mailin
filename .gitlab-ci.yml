@@ -14,21 +14,26 @@ cache:
 # Defines stages which are to be executed
 stages:
   - build
+  - check
   - release
   - deploy
 
 # Run `cargo test` for the project with stable Rust
 run-build:
   stage: build
-  image: rust:latest
   script:
     - rustc --version && cargo --version
     - cargo test
 
- 
+run-clippy:
+  stage: check
+  before_script:
+    - rustup component add clippy
+  script:
+    - cargo clippy -- --deny warnings
+
 release-build:
   stage: release
-  image: rust:latest
   script:
     - cargo build --release
   artifacts:

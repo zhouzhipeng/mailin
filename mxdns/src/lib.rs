@@ -34,15 +34,14 @@
 mod blocklist;
 mod err;
 mod join_all;
-mod resolve;
 
 pub use crate::err::{Error, Result};
-use crate::{blocklist::BlockList, join_all::join_all, resolve::Resolve};
+use crate::{blocklist::BlockList, join_all::join_all};
+use dnsclientx::DNSClient;
 use log::Level::Debug;
 use log::{debug, log_enabled};
-use resolv_conf;
-use resolve::DEFAULT_TIMEOUT;
 use smol::future::FutureExt;
+use std::io::ErrorKind;
 use std::{fs::File, io::Read, matches, net::IpAddr};
 
 const RESOLV_CONF: &str = "/etc/resolv.conf";
@@ -50,7 +49,7 @@ const RESOLV_CONF: &str = "/etc/resolv.conf";
 /// Utilities for looking up IP addresses on blocklists and doing reverse DNS
 #[derive(Clone)]
 pub struct MxDns {
-    bootstrap: Resolve,
+    bootstrap: DNSClient,
     blocklists: Vec<String>,
 }
 
@@ -60,9 +59,9 @@ pub enum FCrDNS {
     /// Reverse lookup failed
     NoReverse,
     /// Reverse lookup was successful but could not be forward confirmed
-    UnConfirmed(Vec<u8>),
+    UnConfirmed(String),
     /// The reverse lookup was forward confirmed
-    Confirmed(Vec<u8>),
+    Confirmed(String),
 }
 
 impl FCrDNS {
@@ -103,7 +102,8 @@ impl MxDns {
         S::Item: Into<String>,
     {
         let ip = bootstrap_dns.into();
-        let bootstrap = Resolve::new(ip, DEFAULT_TIMEOUT);
+        let socket_addr = (ip, 53).into();
+        let bootstrap = DNSClient::new(vec![socket_addr]);
         let blocklists: Vec<String> = blocklists_fqdn.into_iter().map(|i| i.into()).collect();
         Self {
             bootstrap,
@@ -153,7 +153,7 @@ impl MxDns {
         if res.is_empty() {
             Ok(false)
         } else if res.iter().all(|r| r.is_err()) {
-            res.pop().unwrap_or_else(|| Ok(false))
+            res.pop().unwrap_or(Ok(false))
         } else {
             let is_blocked = res.into_iter().any(|r| r.unwrap_or(false));
             Ok(is_blocked)
@@ -162,15 +162,15 @@ impl MxDns {
 
     /// Does a reverse DNS lookup on the given ip address
     /// Returns Ok(None) if no reverse DNS entry exists.
-    pub fn reverse_dns<A>(&self, ip: A) -> Result<Option<Vec<u8>>>
+    pub fn reverse_dns<A>(&self, ip: A) -> Result<Option<String>>
     where
         A: Into<IpAddr>,
     {
         let res = smol::block_on(self.bootstrap.query_ptr(ip.into()));
         match res {
             Ok(fqdn) => Ok(Some(fqdn)),
-            Err(Error::EmptyResponse(_)) => Ok(None),
-            Err(e) => Err(e),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(Error::Reverse("reverse_dns".into(), e)),
         }
     }
 
@@ -187,12 +187,9 @@ impl MxDns {
             None => return Ok(FCrDNS::NoReverse),
             Some(s) => s,
         };
-        debug!(
-            "reverse lookup for {} = {}",
-            ipaddr,
-            String::from_utf8_lossy(&fqdn)
-        );
-        let forward = smol::block_on(self.bootstrap.query_a(&fqdn))?;
+        debug!("reverse lookup for {} = {}", ipaddr, fqdn);
+        let forward = smol::block_on(self.bootstrap.query_a(&fqdn))
+            .map_err(|e| Error::DnsQuery("fcrdns".to_string(), e))?;
         let is_confirmed = forward.contains(&ipaddr);
         if is_confirmed {
             Ok(FCrDNS::Confirmed(fqdn))
@@ -242,13 +239,14 @@ mod tests {
         let blocklists = blocklists();
         for i in 0..blocklists.len() {
             let b = blocklists[i];
-            let ns = smol::block_on(async { mxdns.bootstrap.query_ns(b.0.as_bytes()).await });
+            let ns = smol::block_on(async { mxdns.bootstrap.query_ns(b.0).await });
             if b.1 {
                 assert!(matches!(ns, Ok(_)), "no NS for {}", b.0);
             } else {
                 assert!(
-                    matches!(ns, Err(Error::EmptyResponse(_))),
-                    "unexpected NS for {}",
+                    matches!(&ns, Ok(v) if v.is_empty()),
+                    "unexpected NS result {:?} for {}",
+                    ns,
                     b.0
                 );
             }
@@ -273,7 +271,7 @@ mod tests {
     fn reverse_lookup() {
         let mxdns = build_mx_dns();
         let reverse = mxdns.reverse_dns([116, 203, 10, 186]).unwrap().unwrap();
-        assert_eq!(reverse, b"mail.alienscience.org");
+        assert_eq!(reverse, "mail.alienscience.org");
     }
 
     #[test]

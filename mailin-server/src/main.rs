@@ -9,7 +9,6 @@ use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, INTERNAL_ERROR, OK};
 use mailin_embedded::{Response, Server, SslConfig};
 use mxdns::MxDns;
 use simplelog::{CombinedLogger, Config, LevelFilter, TermLogger, TerminalMode, WriteLogger};
-use statsd;
 use std::env;
 use std::fs::File;
 use std::io;

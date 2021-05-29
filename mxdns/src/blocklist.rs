@@ -1,28 +1,27 @@
-use crate::{
-    err::{Error, Result},
-    resolve::{reverse_ip, Resolve, DEFAULT_TIMEOUT},
-};
+use dnsclientx::{reverse_ip, DNSClient};
+
+use crate::err::{Error, Result};
 use std::net::IpAddr;
 
 // TODO: TTL, multiple NS
 pub struct BlockList {
-    resolver: Resolve,
+    resolver: DNSClient,
     postfix: String,
 }
 
 impl BlockList {
-    pub fn new(ns: Resolve, blocklist: &str) -> Self {
+    pub fn new(ns: DNSClient, blocklist: &str) -> Self {
         Self {
             resolver: ns,
             postfix: blocklist.to_string(),
         }
     }
 
-    pub async fn lookup_ns(blocklist: &str, resolver: &Resolve) -> Result<Resolve> {
+    pub async fn lookup_ns(blocklist: &str, resolver: &DNSClient) -> Result<DNSClient> {
         let nameservers = resolver
-            .query_ns(blocklist.as_bytes())
+            .query_ns(blocklist)
             .await
-            .map_err(|e| Error::BlockListNameserver(blocklist.to_string(), Box::new(e)))?;
+            .map_err(|e| Error::BlockListNameserver(blocklist.to_string(), e))?;
         if nameservers.is_empty() {
             return Ok(resolver.clone());
         }
@@ -33,7 +32,8 @@ impl BlockList {
                 Ok(i) => i,
             };
             if let Some(ip) = ips.first() {
-                return Ok(Resolve::new(*ip, DEFAULT_TIMEOUT));
+                let socket_addr = (*ip, 53).into();
+                return Ok(DNSClient::new(vec![socket_addr]));
             }
         }
         Err(Error::BlockListNameserverIp(blocklist.to_string()))
@@ -42,12 +42,11 @@ impl BlockList {
     pub async fn is_blocked(&self, ip: IpAddr) -> Result<bool> {
         let reversed = reverse_ip(&ip);
         let query_string = format!("{}.{}", reversed, self.postfix);
-        let query = query_string.as_bytes().to_vec();
         let result = self
             .resolver
-            .query_a(&query)
+            .query_a(&query_string)
             .await
-            .map_err(|e| Error::BlockListLookup(query_string, Box::new(e)))?;
+            .map_err(|e| Error::BlockListLookup(query_string, e))?;
         Ok(!result.is_empty())
     }
 }
