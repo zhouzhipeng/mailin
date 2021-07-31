@@ -256,8 +256,7 @@ mod tests {
             data_start_called: false,
             data_end_called: false,
         };
-        let mut session =
-            smtp::SessionBuilder::new("server.domain").build(ip.clone(), &mut handler);
+        let mut session = smtp::SessionBuilder::new("server.domain").build(ip, &mut handler);
         let helo = format!("helo {}\r\n", domain).into_bytes();
         session.process(&helo);
         let mail = format!("mail from:<{}> body=8bitmime\r\n", from).into_bytes();

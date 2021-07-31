@@ -263,7 +263,7 @@ mod tests {
     fn blocked() {
         let mxdns = build_mx_dns();
         let blocked = mxdns.is_blocked([127, 0, 0, 2]).unwrap();
-        assert!(!blocked);
+        assert!(blocked);
     }
 
     #[test]
