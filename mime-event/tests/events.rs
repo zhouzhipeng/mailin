@@ -47,7 +47,7 @@ impl<'a> TestHandler<'a> {
 }
 
 impl<'a> Handler for TestHandler<'a> {
-    fn event<'b>(&mut self, ev: Event<'b>) {
+    fn event<'b>(&mut self, ev: Event) {
         if let Some(expected) = self.expected_events.get(self.current) {
             assert_eq!(*expected, ev);
         }
@@ -173,27 +173,27 @@ fn unstructured_header<'a>(key: &'a str, value: &'a str) -> Event<'a> {
     Event::Header(Header::Unstructured(key.as_bytes(), value.as_bytes()))
 }
 
-fn header<'a>(header: Header<'a>) -> Event<'a> {
+fn header(header: Header) -> Event {
     Event::Header(header)
 }
 
-fn from<'a>(from: &'a str) -> Event<'a> {
+fn from(from: &str) -> Event {
     header(Header::From(from.as_bytes()))
 }
 
-fn to<'a>(to: &'a str) -> Event<'a> {
+fn to(to: &str) -> Event {
     header(Header::To(to.as_bytes()))
 }
 
-fn message_id<'a>(message_id: &'a str) -> Event<'a> {
+fn message_id(message_id: &str) -> Event {
     header(Header::MessageId(message_id.as_bytes()))
 }
 
-fn subject<'a>(subject: &'a str) -> Event<'a> {
+fn subject(subject: &str) -> Event {
     header(Header::Subject(subject.as_bytes()))
 }
 
-fn date<'a>(date: &'a str) -> Event<'a> {
+fn date(date: &str) -> Event {
     header(Header::Date(date.as_bytes()))
 }
 
@@ -204,7 +204,7 @@ fn content_type<'a>(mime: &'a str, param_key: &'a str, param_value: &str) -> Eve
     })
 }
 
-fn body<'a>(block: &'a str) -> Event<'a> {
+fn body(block: &str) -> Event {
     Event::Body(block.as_bytes())
 }
 

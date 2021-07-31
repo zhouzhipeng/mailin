@@ -425,7 +425,7 @@ mod tests {
         let res = session.process(b"auth plain\r\n");
         assert_eq!(res.code, 334);
         if res != EMPTY_AUTH_CHALLENGE {
-            assert!(false, "Server did not send empty challenge");
+            panic!("Server did not send empty challenge");
         }
         assert_state!(session.fsm.current_state(), SmtpState::Auth);
         let res = session.process(b"dGVzdAB0ZXN0ADEyMzQ=\r\n");

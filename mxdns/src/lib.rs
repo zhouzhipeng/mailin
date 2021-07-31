@@ -230,15 +230,14 @@ mod tests {
         let empty: Vec<String> = Vec::new();
         let mxdns = MxDns::with_dns(BOOTSTRAP_DNS, empty);
         let blocked = mxdns.is_blocked(Ipv4Addr::new(127, 0, 0, 2)).unwrap();
-        assert_eq!(blocked, false);
+        assert!(!blocked);
     }
 
     #[test]
     fn blocklist_addrs() {
         let mxdns = build_mx_dns();
         let blocklists = blocklists();
-        for i in 0..blocklists.len() {
-            let b = blocklists[i];
+        for b in blocklists {
             let ns = smol::block_on(async { mxdns.bootstrap.query_ns(b.0).await });
             if b.1 {
                 assert!(matches!(ns, Ok(_)), "no NS for {}", b.0);
@@ -257,14 +256,14 @@ mod tests {
     fn not_blocked() {
         let mxdns = build_mx_dns();
         let blocked = mxdns.is_blocked([127, 0, 0, 1]).unwrap();
-        assert_eq!(blocked, false);
+        assert!(!blocked);
     }
 
     #[test]
     fn blocked() {
         let mxdns = build_mx_dns();
         let blocked = mxdns.is_blocked([127, 0, 0, 2]).unwrap();
-        assert_eq!(blocked, true);
+        assert!(!blocked);
     }
 
     #[test]

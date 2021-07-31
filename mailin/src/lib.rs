@@ -242,7 +242,7 @@ mod tests {
             expected_data.extend(line);
         }
         let mut handler = TestHandler {
-            ip: ip.clone(),
+            ip,
             domain: domain.to_owned(),
             from: from.to_owned(),
             to: to.clone(),
@@ -271,9 +271,9 @@ mod tests {
             session.process(line);
         }
         session.process(b".\r\n");
-        assert_eq!(handler.helo_called, true);
-        assert_eq!(handler.mail_called, true);
-        assert_eq!(handler.rcpt_called, true);
-        assert_eq!(handler.data_called, true);
+        assert!(handler.helo_called);
+        assert!(handler.mail_called);
+        assert!(handler.rcpt_called);
+        assert!(handler.data_called);
     }
 }

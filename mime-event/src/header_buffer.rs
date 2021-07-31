@@ -35,7 +35,7 @@ impl HeaderBuffer {
         if self.has_value {
             self.has_value = false;
             let length = self.length;
-            let buf = mem::replace(&mut self.line, Vec::new());
+            let buf = mem::take(&mut self.line);
             self.length = 0;
             Some((buf, length))
         } else {

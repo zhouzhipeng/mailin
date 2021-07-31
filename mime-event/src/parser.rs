@@ -126,7 +126,7 @@ impl<W: Write, H: Handler> EventParser<W, H> {
             };
             Ok(self.state)
         } else {
-            let token = line_parser::header(&buf)?;
+            let token = line_parser::header(buf)?;
             if let Header::ContentType {
                 mime_type: mtype,
                 parameters: params,
@@ -228,7 +228,7 @@ impl<W: Write, H: Handler> EventParser<W, H> {
                     });
                     State::PartStart
                 } else {
-                    self.handler.event(Event::Body(&buf));
+                    self.handler.event(Event::Body(buf));
                     State::Body
                 }
             }

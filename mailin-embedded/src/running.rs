@@ -168,7 +168,7 @@ fn handle_connection<H: Handler>(
     stream.set_read_timeout(Some(*FIVE_MINUTES)).ok();
     stream.set_write_timeout(Some(*FIVE_MINUTES)).ok();
     let bufstream = BufStream::new(stream);
-    if let Err(err) = start_session(&session_builder, remote, bufstream, ssl, handler) {
+    if let Err(err) = start_session(session_builder, remote, bufstream, ssl, handler) {
         error!("({}) {}", remote, err);
     }
 }

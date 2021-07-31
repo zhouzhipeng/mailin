@@ -123,7 +123,6 @@ fn auth_response(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     terminated(take_while1(is_base64), tag("\r\n"))(buf)
 }
 
-#[allow(clippy::clippy::unnecessary_wraps)]
 fn empty(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     Ok((buf, b"" as &[u8]))
 }
@@ -210,7 +209,7 @@ mod tests {
                 assert_eq!(authentication_id, "test");
                 assert_eq!(password, "1234");
             }
-            _ => assert!(false, "Auth plain with initial response incorrectly parsed"),
+            _ => panic!("Auth plain with initial response incorrectly parsed"),
         };
     }
 
@@ -219,10 +218,7 @@ mod tests {
         let res = parse(b"auth plain\r\n");
         match res {
             Ok(Cmd::AuthPlainEmpty) => {}
-            _ => assert!(
-                false,
-                "Auth plain without initial response incorrectly parsed"
-            ),
+            _ => panic!("Auth plain without initial response incorrectly parsed"),
         };
     }
 }

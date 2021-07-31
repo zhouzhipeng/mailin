@@ -60,7 +60,7 @@ fn header_with_params(
         let preamble = match_header_key(header);
         let (i, value) = preceded(preamble, header_value_with_parameters)(buf)?;
         let mut parameter_parser = terminated(parameters, tag(b"\r\n"));
-        let (i, params) = parameter_parser(&i)?;
+        let (i, params) = parameter_parser(i)?;
         Ok((i, (value, params)))
     }
 }

@@ -44,7 +44,7 @@ fn multipart_mixed() {
         match i {
             0 => assert_eq!(attachment.position(), (414, 110)),
             1 => assert_eq!(attachment.position(), (549, 135)),
-            _ => assert!(false, "Unexpected attachment"),
+            _ => panic!("Unexpected attachment"),
         }
     }
 }
