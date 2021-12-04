@@ -152,31 +152,31 @@ fn match_unstructured(header: &[u8]) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> 
 }
 
 fn from(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"From"), |v| Header::From(v))(buf)
+    map(match_unstructured(b"From"), Header::From)(buf)
 }
 
 fn to(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"To"), |v| Header::To(v))(buf)
+    map(match_unstructured(b"To"), Header::To)(buf)
 }
 
 fn subject(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Subject"), |v| Header::Subject(v))(buf)
+    map(match_unstructured(b"Subject"), Header::Subject)(buf)
 }
 
 fn sender(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Sender"), |v| Header::Sender(v))(buf)
+    map(match_unstructured(b"Sender"), Header::Sender)(buf)
 }
 
 fn reply_to(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Reply-To"), |v| Header::ReplyTo(v))(buf)
+    map(match_unstructured(b"Reply-To"), Header::ReplyTo)(buf)
 }
 
 fn message_id(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Message-ID"), |v| Header::MessageId(v))(buf)
+    map(match_unstructured(b"Message-ID"), Header::MessageId)(buf)
 }
 
 fn date(buf: &[u8]) -> IResult<&[u8], Header> {
-    map(match_unstructured(b"Date"), |v| Header::Date(v))(buf)
+    map(match_unstructured(b"Date"), Header::Date)(buf)
 }
 
 fn content_description(buf: &[u8]) -> IResult<&[u8], Header> {

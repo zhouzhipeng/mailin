@@ -74,6 +74,7 @@ impl fmt::Debug for HeaderFields {
 #[derive(Clone, Debug)]
 pub struct ContentType {
     pub(crate) mime_type: Mime,
+    #[allow(dead_code)]
     pub(crate) parameters: HashMap<Vec<u8>, Vec<u8>>,
 }
 
