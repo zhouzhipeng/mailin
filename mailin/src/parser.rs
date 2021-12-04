@@ -129,7 +129,7 @@ fn empty(buf: &[u8]) -> IResult<&[u8], &[u8]> {
 
 fn auth_plain(buf: &[u8]) -> IResult<&[u8], Cmd> {
     let parser = preceded(tag_no_case(b"plain"), alt((auth_initial, empty)));
-    map(parser, |initial| sasl_plain_cmd(initial))(buf)
+    map(parser, sasl_plain_cmd)(buf)
 }
 
 fn auth(buf: &[u8]) -> IResult<&[u8], Cmd> {
