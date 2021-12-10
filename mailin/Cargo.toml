@@ -10,10 +10,10 @@ readme = "README.md"
 keywords = ["smtp","server","email"]
 categories = ["email","network-programming"]
 license = "MIT OR Apache-2.0"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-nom = "6.0"
+nom = "7"
 log = "0.4"
 base64 = "0.13"
 ternop = "1.0"

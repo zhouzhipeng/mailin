@@ -82,7 +82,7 @@ fn header_value_with_parameters(buf: &[u8]) -> IResult<&[u8], &[u8]> {
 }
 
 fn parameters(buf: &[u8]) -> IResult<&[u8], HashMap<&[u8], Vec<u8>>> {
-    fold_many0(parameter, HashMap::new(), |mut acc: HashMap<_, _>, item| {
+    fold_many0(parameter, HashMap::new, |mut acc: HashMap<_, _>, item| {
         acc.insert(item.0, item.1);
         acc
     })(buf)
