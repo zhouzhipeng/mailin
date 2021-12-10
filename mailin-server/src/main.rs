@@ -8,7 +8,9 @@ use log::error;
 use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, INTERNAL_ERROR, OK};
 use mailin_embedded::{Response, Server, SslConfig};
 use mxdns::MxDns;
-use simplelog::{CombinedLogger, Config, LevelFilter, TermLogger, TerminalMode, WriteLogger};
+use simplelog::{
+    ColorChoice, CombinedLogger, Config, LevelFilter, TermLogger, TerminalMode, WriteLogger,
+};
 use std::env;
 use std::fs::File;
 use std::io;
@@ -105,7 +107,12 @@ impl<'a> Handler<'a> {
 fn setup_logger(log_dir: Option<String>) -> Result<(), Error> {
     let log_level = LevelFilter::Info;
     // Try to create a terminal logger, if this fails use a simple logger to stdout
-    let term_logger = TermLogger::new(log_level, Config::default(), TerminalMode::Stdout);
+    let term_logger = TermLogger::new(
+        log_level,
+        Config::default(),
+        TerminalMode::Stdout,
+        ColorChoice::Auto,
+    );
     // Create a trace logger that writes SMTP interaction to file
     if let Some(dir) = log_dir {
         let log_path = Path::new(&dir);

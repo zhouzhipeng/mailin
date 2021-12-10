@@ -16,7 +16,7 @@ categories = [
     'network-programming',
 ]
 license = 'MIT OR Apache-2.0'
-edition = '2018'
+edition = '2021'
 
 [dependencies]
 thiserror = '1'
@@ -26,7 +26,7 @@ smol = '1.2.5'
 pin-project-lite = '0.2.6'
 
 [dependencies.dnsclientx]
-version = '0.3'
+version = '0.4'
 features = ['smol-async']
 
 [dev-dependencies]

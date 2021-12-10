@@ -2,14 +2,14 @@
 name = "mailin-server"
 version = "0.1.0"
 authors = ["alienscience <saul@alienscience.org.uk>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-mailin-embedded = { features=["rtls"], path="../mailin-embedded" }
-mxdns = { path="../mxdns" }
-mime-event = { path="../mime-event" }
+mailin-embedded = { features = ["rtls"], path = "../mailin-embedded" }
+mxdns = { path = "../mxdns" }
+mime-event = { path = "../mime-event" }
 log = "0.4"
-simplelog = "0.9.0"
+simplelog = "0.11"
 chrono = "0.4"
 getopts = "0.2"
 failure = "0.1"

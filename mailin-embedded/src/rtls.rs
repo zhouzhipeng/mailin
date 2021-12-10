@@ -1,7 +1,7 @@
 use crate::ssl::{SslConfig, Stream};
 use crate::Error;
 use rustls::{
-    Certificate, NoClientAuth, PrivateKey, ServerConfig, ServerSession, StreamOwned, TLSError,
+    Certificate, Error as TLSError, PrivateKey, ServerConfig, ServerConnection, StreamOwned,
 };
 use std::fs;
 use std::io::BufReader;
@@ -14,7 +14,7 @@ pub struct SslImpl {
     tls_config: Arc<ServerConfig>,
 }
 
-impl Stream for StreamOwned<ServerSession, TcpStream> {}
+impl Stream for StreamOwned<ServerConnection, TcpStream> {}
 
 impl From<TLSError> for Error {
     fn from(error: TLSError) -> Self {
@@ -31,22 +31,26 @@ impl SslImpl {
                 key_path,
                 chain_path,
             } => {
-                let mut config = ServerConfig::new(NoClientAuth::new());
                 let mut certs = load_certs(&cert_path)?;
                 let mut chain = load_certs(&chain_path)?;
                 certs.append(&mut chain);
                 let key = load_key(&key_path)?;
-                config.set_single_cert(certs, key)?;
+                let config = ServerConfig::builder()
+                    .with_safe_defaults()
+                    .with_no_client_auth()
+                    .with_single_cert(certs, key)?;
                 Some(config)
             }
             SslConfig::SelfSigned {
                 cert_path,
                 key_path,
             } => {
-                let mut config = ServerConfig::new(NoClientAuth::new());
                 let certs = load_certs(&cert_path)?;
                 let key = load_key(&key_path)?;
-                config.set_single_cert(certs, key)?;
+                let config = ServerConfig::builder()
+                    .with_safe_defaults()
+                    .with_no_client_auth()
+                    .with_single_cert(certs, key)?;
                 Some(config)
             }
             _ => None,
@@ -58,7 +62,7 @@ impl SslImpl {
     }
 
     pub fn accept(&self, stream: TcpStream) -> Result<impl Stream, Error> {
-        let session = ServerSession::new(&self.tls_config);
+        let session = ServerConnection::new(self.tls_config.clone())?;
         let tls_stream = StreamOwned::new(session, stream);
         Ok(tls_stream)
     }
@@ -67,19 +71,22 @@ impl SslImpl {
 fn load_certs(filename: &str) -> Result<Vec<Certificate>, Error> {
     let certfile = fs::File::open(filename)?;
     let mut reader = BufReader::new(certfile);
-    rustls::internal::pemfile::certs(&mut reader)
-        .map_err(|_| Error::new("Unparseable certificates"))
+    let ret: Vec<Certificate> = rustls_pemfile::certs(&mut reader)
+        .map_err(|_| Error::new("Unparseable certificates"))?
+        .into_iter()
+        .map(Certificate)
+        .collect();
+    Ok(ret)
 }
 
 fn load_key(filename: &str) -> Result<PrivateKey, Error> {
     let keyfile = fs::File::open(filename)?;
     let mut reader = BufReader::new(keyfile);
-    let rsa_keys = rustls::internal::pemfile::rsa_private_keys(&mut reader)
+    let rsa_keys = rustls_pemfile::rsa_private_keys(&mut reader)
         .map_err(|_| Error::new("Unparseable RSA key"))?;
-
     let keyfile = fs::File::open(filename)?;
     let mut reader = BufReader::new(keyfile);
-    let pkcs8_keys = rustls::internal::pemfile::pkcs8_private_keys(&mut reader)
+    let pkcs8_keys = rustls_pemfile::pkcs8_private_keys(&mut reader)
         .map_err(|_| Error::new("Unparseable PKCS8 key"))?;
 
     // Prefer to load pkcs8 keys
@@ -87,5 +94,6 @@ fn load_key(filename: &str) -> Result<PrivateKey, Error> {
         .first()
         .or_else(|| rsa_keys.first())
         .cloned()
+        .map(PrivateKey)
         .ok_or_else(|| Error::new("No RSA or PKCS8 keys found"))
 }

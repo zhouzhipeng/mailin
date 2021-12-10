@@ -6,24 +6,24 @@ description = "An SMTP server that can be embedded in other programs"
 homepage = "https://gitlab.com/alienscience/mailin"
 repository = "https://gitlab.com/alienscience/mailin"
 readme = "README.md"
-keywords = ["smtp","server","email"]
-categories = ["email","network-programming"]
+keywords = ["smtp", "server", "email"]
+categories = ["email", "network-programming"]
 license = "MIT OR Apache-2.0"
-edition = "2018"
+edition = "2021"
 
 [package.metadata.docs.rs]
 features = ["rtls"]
 
 [features]
-ossl=["openssl"]
-rtls=["rustls"]
+ossl = ["openssl"]
+rtls = ["rustls", "rustls-pemfile"]
 
 [dependencies]
-mailin = { path="../mailin", version = "^0.5.0"}
+mailin = { path = "../mailin", version = "^0.5.0" }
 scoped_threadpool = "0.1"
 log = "0.4"
 lazy_static = "1.1"
 bufstream = "0.1"
-rustls = { version = "0.19", optional = true }
+rustls = { version = "0.20", optional = true }
+rustls-pemfile = { version = "0.2", optional = true }
 openssl = { version = "0.10", optional = true }
-
