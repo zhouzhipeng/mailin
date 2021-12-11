@@ -202,6 +202,7 @@ impl MxDns {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
     use std::net::Ipv4Addr;
 
     const BOOTSTRAP_DNS: IpAddr = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
@@ -215,6 +216,18 @@ mod tests {
             ("b.barracuda.central.org", false),
             ("cbl.abuseat.org", true),
         ]
+    }
+
+    fn lookup_host(host: &str) -> Result<IpAddr> {
+        let socket_addr = (BOOTSTRAP_DNS, 53).into();
+        let dns = DNSClient::new(vec![socket_addr]);
+        smol::block_on(dns.query_a(host))
+            .and_then(|res| {
+                res.first()
+                    .cloned()
+                    .ok_or_else(|| io::Error::new(ErrorKind::Other, "no dns entries"))
+            })
+            .map_err(|e| Error::DnsQuery(host.to_string(), e))
     }
 
     fn build_mx_dns() -> MxDns {
@@ -238,7 +251,7 @@ mod tests {
         let mxdns = build_mx_dns();
         let blocklists = blocklists();
         for b in blocklists {
-            let ns = smol::block_on(async { mxdns.bootstrap.query_ns(b.0).await });
+            let ns = smol::block_on(mxdns.bootstrap.query_ns(b.0));
             if b.1 {
                 assert!(matches!(ns, Ok(_)), "no NS for {}", b.0);
             } else {
@@ -268,15 +281,19 @@ mod tests {
 
     #[test]
     fn reverse_lookup() {
+        let alienscience_ip =
+            lookup_host("mail.alienscience.org").expect("Cannot lookup mailserver address");
         let mxdns = build_mx_dns();
-        let reverse = mxdns.reverse_dns([116, 203, 10, 186]).unwrap().unwrap();
+        let reverse = mxdns.reverse_dns(alienscience_ip).unwrap().unwrap();
         assert_eq!(reverse, "mail.alienscience.org");
     }
 
     #[test]
     fn fcrdns_ok() {
+        let alienscience_ip =
+            lookup_host("mail.alienscience.org").expect("Cannot lookup mailserver address");
         let mxdns = build_mx_dns();
-        let res = mxdns.fcrdns([116, 203, 10, 186]);
+        let res = mxdns.fcrdns(alienscience_ip);
         assert!(
             matches!(res, Ok(FCrDNS::Confirmed(_))),
             "Valid mail server failed fcrdns: {:?}",
