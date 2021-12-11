@@ -122,13 +122,13 @@ impl MxDns {
         }
         let ip: IpAddr = addr.into();
 
-        let ret = smol::block_on(async {
+        let ret = smol::block_on({
             let mut all_checks = Vec::new();
             for blocklist in &self.blocklists {
                 let one_check = self.check_blocklist(blocklist, ip);
                 all_checks.push(one_check.boxed());
             }
-            join_all(all_checks).await
+            join_all(all_checks)
         });
         if log_enabled!(Debug) {
             for i in ret.iter().enumerate() {
