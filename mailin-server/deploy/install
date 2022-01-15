@@ -20,7 +20,7 @@ fi
 /usr/bin/systemctl stop mailin 2> /dev/null || true
 
 cp mailin.service /etc/systemd/system/
-chmod a+r /etc/systemd/system/mailing.service
+chmod a+r /etc/systemd/system/mailin.service
 
 cp mailin /usr/local/bin
 chmod a+x /usr/local/bin/mailin
