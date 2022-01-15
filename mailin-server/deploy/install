@@ -1,12 +1,6 @@
 #!/bin/bash
 set -e
 
-cp mailin /usr/local/bin
-chmod a+x /usr/local/bin/mailin
-
-cp mailin.service /etc/systemd/system/
-chmod a+r /etc/systemd/system/mailing.service
-
 # Create user
 /usr/bin/getent passwd mailin || \
     /usr/sbin/useradd -r -d /home/mailin -s /sbin/nologin mailin
@@ -23,7 +17,14 @@ if [ ! -f /etc/mailin/fullchain.pem ] || [ ! -f /etc/mailin/privkey.pem ] ; then
     chmod g+r /etc/mailin/*.pem
 fi
 
+/usr/bin/systemctl stop mailin 2> /dev/null || true
+
+cp mailin.service /etc/systemd/system/
+chmod a+r /etc/systemd/system/mailing.service
+
+cp mailin /usr/local/bin
+chmod a+x /usr/local/bin/mailin
 
 /usr/bin/systemctl daemon-reload
-/usr/bin/systemctl restart mailin
+/usr/bin/systemctl start mailin
 /usr/bin/systemctl enable mailin

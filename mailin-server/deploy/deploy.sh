@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-mkdir tmp-deploy
+mkdir -p tmp-deploy
 cp mailin-server/deploy/install tmp-deploy/
 cp mailin-server/deploy/mailin.service tmp-deploy/
 cp target/release/mailin-server tmp-deploy/mailin
