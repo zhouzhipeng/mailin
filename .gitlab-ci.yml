@@ -43,15 +43,15 @@ release-build:
     - master
 
 deploy:
-  image: registry.gitlab.com/alienscience/docker-rpmbd:latest
+  image: kroniak/ssh-client:3.15
   stage: deploy
   dependencies:
     - release-build
   before_script:
     - eval $(ssh-agent -s)
     - echo "$SSH_DEPLOY_KEY" | ssh-add -
+    - apk add tar zstd
   script:
-    - mailin-server/deploy/rpmbuild/build.sh
     - >
       SSH_DEPLOY_USER=$SSH_DEPLOY_USER
       SSH_DEPLOY_PORT=$SSH_DEPLOY_PORT

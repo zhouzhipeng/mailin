@@ -1,0 +1,29 @@
+#!/bin/bash
+set -e
+
+cp mailin /usr/local/bin
+chmod a+x /usr/local/bin/mailin
+
+cp mailin.service /etc/systemd/system/
+chmod a+r /etc/systemd/system/mailing.service
+
+# Create user
+/usr/bin/getent passwd mailin || \
+    /usr/sbin/useradd -r -d /home/mailin -s /sbin/nologin mailin
+/usr/bin/mkdir -p /home/mailin/logs
+/usr/bin/chown mailin:mailin /home/mailin/logs
+
+# Certs
+if [ ! -f /etc/mailin/fullchain.pem ] || [ ! -f /etc/mailin/privkey.pem ] ; then
+    certbot -n certonly --standalone --preferred-challenges http -d mail.spamtastic.cc
+    mkdir -p /etc/mailin
+    cp /etc/letsencrypt/live/mail.spamtastic.cc/fullchain.pem /etc/mailin/
+    cp /etc/letsencrypt/live/mail.spamtastic.cc/privkey.pem /etc/mailin/
+    chgrp mailin /etc/mailin/*.pem
+    chmod g+r /etc/mailin/*.pem
+fi
+
+
+/usr/bin/systemctl daemon-reload
+/usr/bin/systemctl restart mailin
+/usr/bin/systemctl enable mailin
