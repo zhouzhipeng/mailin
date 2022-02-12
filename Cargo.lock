@@ -553,7 +553,7 @@ dependencies = [
 
 [[package]]
 name = "mailin"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64",
  "either 1.6.1",
