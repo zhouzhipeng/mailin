@@ -1,3 +1,3 @@
 #!/bin/sh
 
-swaks -tls --to fish@fish.com -s localhost:8025
+swaks -tls --to fish@fish.com -s 127.0.0.1:8025
