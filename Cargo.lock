@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "mailin-embedded"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "bufstream",
  "lazy_static",
