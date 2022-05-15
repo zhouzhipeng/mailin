@@ -1,8 +1,8 @@
 mod store;
 
 use crate::store::MailStore;
+use anyhow::{anyhow, Context, Result};
 use chrono::Local;
-use failure::{format_err, Error};
 use getopts::Options;
 use log::error;
 use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, INTERNAL_ERROR, OK};
@@ -104,7 +104,7 @@ impl<'a> Handler<'a> {
     }
 }
 
-fn setup_logger(log_dir: Option<String>) -> Result<(), Error> {
+fn setup_logger(log_dir: Option<String>) -> Result<()> {
     let log_level = LevelFilter::Info;
     // Try to create a terminal logger, if this fails use a simple logger to stdout
     let term_logger = TermLogger::new(
@@ -124,10 +124,9 @@ fn setup_logger(log_dir: Option<String>) -> Result<(), Error> {
             term_logger,
             WriteLogger::new(LevelFilter::Trace, Config::default(), file),
         ])
-        .map_err(|err| format_err!("Cannot initialize logger: {}", err))
+        .context("Cannot initialize logger")
     } else {
-        CombinedLogger::init(vec![term_logger])
-            .map_err(|err| format_err!("Cannot initialize logger: {}", err))
+        CombinedLogger::init(vec![term_logger]).context("Cannot initialize logger")
     }
 }
 
@@ -136,7 +135,7 @@ fn print_usage(program: &str, opts: &Options) {
     print!("{}", opts.usage(&brief));
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let mut opts = getopts::Options::new();
     opts.optflag("h", OPT_HELP, "print this help menu");
@@ -167,7 +166,7 @@ fn main() -> Result<(), Error> {
     opts.optopt("", OPT_MAILDIR, "the directory to store mail in", "MAILDIR");
     let matches = opts
         .parse(&args[1..])
-        .map_err(|err| format_err!("Error parsing command line: {}", err))?;
+        .context("Cannot parse command line")?;
     if matches.opt_present(OPT_HELP) {
         print_usage(&args[0], &opts);
         return Ok(());
@@ -183,7 +182,7 @@ fn main() -> Result<(), Error> {
         .opt_str(OPT_SERVER)
         .unwrap_or_else(|| DOMAIN.to_owned());
     let blocklists = matches.opt_strs(OPT_BLOCKLIST);
-    let mxdns = MxDns::new(blocklists).map_err(|e| format_err!("{}", e))?;
+    let mxdns = MxDns::new(blocklists)?;
     let statsd_prefix = matches
         .opt_str(OPT_STATSD_PREFIX)
         .unwrap_or_else(|| "mailin".to_owned());
@@ -203,8 +202,7 @@ fn main() -> Result<(), Error> {
     server
         .with_name(domain)
         .with_ssl(ssl_config)
-        .map_err(|e| format_err!("{}", e))?;
-
+        .map_err(|e| anyhow!("Cannot initialise SSL: {}", e))?;
     // Bind TCP listener
     let addr = matches
         .opt_str(OPT_ADDRESS)
@@ -215,5 +213,7 @@ fn main() -> Result<(), Error> {
     let log_directory = matches.opt_str(OPT_LOG);
     setup_logger(log_directory)?;
 
-    server.serve().map_err(|e| format_err!("{}", e))
+    server
+        .serve()
+        .map_err(|e| anyhow!("Cannot start server: {}", e))
 }
