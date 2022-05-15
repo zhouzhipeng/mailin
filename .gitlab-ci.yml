@@ -22,10 +22,12 @@ run-build:
   stage: check
   before_script:
     - rustup component add clippy
+    - cargo install --force cargo-audit
   script:
     - rustc --version && cargo --version
     - cargo test
     - cargo clippy -- --deny warnings
+    - cargo audit
 
 release-build:
   stage: release
