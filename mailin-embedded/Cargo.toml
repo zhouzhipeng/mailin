@@ -25,5 +25,5 @@ log = "0.4"
 lazy_static = "1.1"
 bufstream = "0.1"
 rustls = { version = "0.20", optional = true }
-rustls-pemfile = { version = "0.3", optional = true }
+rustls-pemfile = { version = "1", optional = true }
 openssl = { version = "0.10", optional = true }
