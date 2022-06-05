@@ -2,7 +2,6 @@ mod store;
 
 use crate::store::MailStore;
 use anyhow::{anyhow, Context, Result};
-use chrono::Local;
 use getopts::Options;
 use log::error;
 use mailin_embedded::response::{BAD_HELLO, BLOCKED_IP, INTERNAL_ERROR, OK};
@@ -17,6 +16,7 @@ use std::io;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::path::Path;
+use time::{format_description, OffsetDateTime};
 
 const DOMAIN: &str = "localhost";
 const DEFAULT_ADDRESS: &str = "127.0.0.1:8025";
@@ -116,8 +116,7 @@ fn setup_logger(log_dir: Option<String>) -> Result<()> {
     // Create a trace logger that writes SMTP interaction to file
     if let Some(dir) = log_dir {
         let log_path = Path::new(&dir);
-        let datetime = Local::now().format("%Y%m%d%H%M%S").to_string();
-        let filename = format!("smtp-{}.log", datetime);
+        let filename = log_filename();
         let filepath = log_path.join(&filename);
         let file = File::create(&filepath)?;
         CombinedLogger::init(vec![
@@ -128,6 +127,16 @@ fn setup_logger(log_dir: Option<String>) -> Result<()> {
     } else {
         CombinedLogger::init(vec![term_logger]).context("Cannot initialize logger")
     }
+}
+
+fn log_filename() -> String {
+    let datetime = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let date_suffix_format =
+        format_description::parse("[year][month][day][hour][minute][second]").unwrap();
+    let datetime = datetime
+        .format(&date_suffix_format)
+        .unwrap_or_else(|_| datetime.to_string());
+    format!("smtp-{}.log", datetime)
 }
 
 fn print_usage(program: &str, opts: &Options) {
