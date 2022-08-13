@@ -74,7 +74,7 @@ pub(crate) enum Message {
 }
 
 /// Action indicates the recommended action to take on a response
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Action {
     /// Send the response and close the connection
     Close,

@@ -98,7 +98,7 @@ impl<'a> mailin_embedded::Handler for Handler<'a> {
 
 impl<'a> Handler<'a> {
     fn incr_stat(&self, name: &str) {
-        for client in self.statsd.iter() {
+        if let Some(client) = self.statsd {
             client.incr(name);
         }
     }

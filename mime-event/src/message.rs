@@ -39,7 +39,7 @@ pub struct Part {
 }
 
 /// Common header fields
-#[derive(Default, PartialEq)]
+#[derive(Default, PartialEq, Eq)]
 pub struct HeaderFields {
     /// Id of the mail message
     pub message_id: Option<Vec<u8>>,

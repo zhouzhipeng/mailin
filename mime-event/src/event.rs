@@ -4,7 +4,7 @@ use std::fmt;
 use std::str;
 
 /// Events sent to a Handler
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub enum Event<'a> {
     /// Parsing has Started
     Start,
@@ -45,7 +45,7 @@ pub enum Mime {
 }
 
 /// Multipart MIME types
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Multipart {
     /// MIME multipart alternative e.g text vs html
     Alternative,

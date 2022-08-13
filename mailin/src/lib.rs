@@ -133,7 +133,7 @@ pub trait Handler {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Supported authentication mechanisms
 pub enum AuthMechanism {
     /// Plain user/password over TLS

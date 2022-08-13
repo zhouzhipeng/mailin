@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 /// Header contains information about an email header event
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub enum Header<'a> {
     /// A header containing unstructured information as key, value
     Unstructured(&'a [u8], &'a [u8]),
