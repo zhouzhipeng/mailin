@@ -1054,6 +1054,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smtp-parser"
+version = "0.0.1"
+dependencies = [
+ "base64",
+ "nom",
+]
+
+[[package]]
 name = "socket2"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

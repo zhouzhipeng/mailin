@@ -5,6 +5,6 @@ members = [
         "mailin-embedded",
         "mailin-server",
         "mxdns",
-        "mime-event"
+        "mime-event",
+        "parser",
 ]
-
