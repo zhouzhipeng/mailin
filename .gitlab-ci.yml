@@ -19,12 +19,10 @@ run-build:
   stage: check
   before_script:
     - rustup component add clippy
-    - cargo install --force cargo-audit
   script:
     - rustc --version && cargo --version
     - cargo test
     - cargo clippy -- --deny warnings
-    - cargo audit
 
 release-build:
   stage: release
@@ -39,6 +37,7 @@ release-build:
 deploy:
   image: kroniak/ssh-client:3.15
   stage: deploy
+  cache: []
   dependencies:
     - release-build
   before_script:
