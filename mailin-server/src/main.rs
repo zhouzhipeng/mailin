@@ -117,8 +117,8 @@ fn setup_logger(log_dir: Option<String>) -> Result<()> {
     if let Some(dir) = log_dir {
         let log_path = Path::new(&dir);
         let filename = log_filename();
-        let filepath = log_path.join(&filename);
-        let file = File::create(&filepath)?;
+        let filepath = log_path.join(filename);
+        let file = File::create(filepath)?;
         CombinedLogger::init(vec![
             term_logger,
             WriteLogger::new(LevelFilter::Trace, Config::default(), file),
@@ -205,7 +205,7 @@ fn main() -> Result<()> {
     let handler = Handler {
         mxdns: &mxdns,
         statsd: statsd.as_ref(),
-        mailstore: MailStore::new(&maildir),
+        mailstore: MailStore::new(maildir),
     };
     let mut server = Server::new(handler);
     server
