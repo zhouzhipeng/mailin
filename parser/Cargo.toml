@@ -14,3 +14,4 @@ edition = "2021"
 [dependencies]
 nom = "7"
 base64 = "0.13"
+snafu = "0.7"
