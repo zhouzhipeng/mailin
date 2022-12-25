@@ -1,4 +1,4 @@
-pub enum Command<'a> {
-    Ehlo { domain: &'a [u8] },
-    Helo { domain: &'a [u8] },
+pub enum Command {
+    Ehlo { domain: Vec<u8> },
+    Helo { domain: Vec<u8> },
 }

@@ -1,7 +1,7 @@
 use nom::{
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_while1},
-    combinator::map,
+    combinator::{map, opt},
     multi::separated_list1,
     sequence::{pair, preceded, terminated},
     IResult,
@@ -50,11 +50,31 @@ fn ehlo(buf: &[u8]) -> IResult<&[u8], Command> {
 }
 
 // domain <- subdomain ( '.' subdomain )*
-fn domain(buf: &[u8]) -> IResult<&[u8], &[u8]> {
+fn domain(buf: &[u8]) -> IResult<&[u8], Vec<u8>> {
+    let parser = separated_list1(tag(b"."), subdomain);
+    map(parser, |v| v.join(b".".as_slice()))(buf)
+}
+
+// sub-domain = ( Let-dig [Ldh-str] ) / U-label
+// U-label is currently a superset of the ascii subdomain
+fn subdomain(buf: &[u8]) -> IResult<&[u8], Vec<u8>> {
+    ulabel(buf)
+}
+
+fn ulabel(buf: &[u8]) -> IResult<&[u8], Vec<u8>> {
+    let parser = pair(uletterdigit, opt(uldhstr));
+    map(parser, |(f, o)| [f, o.unwrap_or_default()].concat())(buf)
+}
+
+// Unicode version of:
+// letDig <- alpha / digit
+fn uletterdigit(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     todo!()
 }
 
-fn subdomain(buf: &[u8]) -> IResult<&[u8], &[u8]> {
+// Unicode version of:
+// Ldh-str = *( ALPHA / DIGIT / "-" ) Let-dig
+fn uldhstr(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     todo!()
 }
 
