@@ -2,6 +2,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_while1},
     combinator::map,
+    multi::separated_list1,
     sequence::{pair, preceded, terminated},
     IResult,
 };
@@ -36,32 +37,34 @@ fn command(buf: &[u8]) -> IResult<&[u8], Command> {
     terminated(alt((helo, ehlo)), tag(b"\r\n"))(buf)
 }
 
+// helo = "HELO" SP Domain CRLF
 fn helo(buf: &[u8]) -> IResult<&[u8], Command> {
     let parse_domain = preceded(cmd(b"helo"), domain);
     map(parse_domain, |d| Command::Helo { domain: d })(buf)
 }
 
+// ehlo = "EHLO" SP ( Domain / address-literal ) CRLF
 fn ehlo(buf: &[u8]) -> IResult<&[u8], Command> {
     let parse_domain = preceded(cmd(b"ehlo"), domain);
     map(parse_domain, |d| Command::Helo { domain: d })(buf)
 }
 
-// TODO: can this really be a str?
-fn domain(buf: &[u8]) -> IResult<&[u8], &str> {
+// domain <- subdomain ( '.' subdomain )*
+fn domain(buf: &[u8]) -> IResult<&[u8], &[u8]> {
+    todo!()
+}
+
+fn subdomain(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     todo!()
 }
 
 //---- Helper functions ---------------------------------------------------------
 
-// TODO: Check against spec
 // Return a parser to match the given command
-fn cmd(cmd_tag: &[u8]) -> impl Fn(&[u8]) -> IResult<&[u8], (&[u8], &[u8])> + '_ {
-    move |buf: &[u8]| -> Result<(&[u8], (&[u8], &[u8])), nom::Err<nom::error::Error<&[u8]>>> {
-        pair(tag_no_case(cmd_tag), space)(buf)
-    }
+fn cmd(cmd_tag: &[u8]) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> + '_ {
+    move |buf: &[u8]| terminated(tag(cmd_tag), space)(buf)
 }
 
-// TODO: Check against spec
 // Match one or more spaces
 fn space(buf: &[u8]) -> IResult<&[u8], &[u8]> {
     take_while1(|b| b == b' ')(buf)

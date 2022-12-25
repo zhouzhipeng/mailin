@@ -1,4 +1,4 @@
 pub enum Command<'a> {
-    Ehlo { domain: &'a str },
-    Helo { domain: &'a str },
+    Ehlo { domain: &'a [u8] },
+    Helo { domain: &'a [u8] },
 }
