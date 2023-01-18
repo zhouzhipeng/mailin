@@ -35,7 +35,7 @@ enum AuthState {
     Authenticated,
 }
 
-trait State: Send {
+trait State: Send + Sync {
     #[cfg(test)]
     fn id(&self) -> SmtpState;
 
