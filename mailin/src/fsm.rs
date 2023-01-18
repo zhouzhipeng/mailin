@@ -109,6 +109,7 @@ fn default_handler(
         Cmd::Quit => (GOODBYE, None),
         Cmd::Helo { domain } => handle_helo(current, fsm, handler, domain),
         Cmd::Ehlo { domain } => handle_ehlo(current, fsm, handler, domain),
+        Cmd::Noop => (OK, Some(current)),
         _ => unhandled(current),
     }
 }
