@@ -256,6 +256,24 @@ mod tests {
     }
 
     #[test]
+    fn helo_noop() {
+        let mut session = new_session();
+        let res1 = session.process(b"helo a.domain\r\n");
+        assert_eq!(res1.code, 250);
+        let res2 = session.process(b"noop\r\n");
+        assert_eq!(res2.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
+        session.process(b"mail from:<ship@sea.com>\r\n");
+        let res3 = session.process(b"noop\r\n");
+        assert_eq!(res3.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::Mail);
+        session.process(b"rcpt to:<fish@sea.com>\r\n");
+        let res4 = session.process(b"noop\r\n");
+        assert_eq!(res4.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::Rcpt);
+    }
+
+    #[test]
     fn data() {
         let mut session = new_data_session();
         session.process(b"helo a.domain\r\n");
@@ -469,3 +487,4 @@ mod tests {
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }
 }
+
