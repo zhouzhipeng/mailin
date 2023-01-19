@@ -15,6 +15,6 @@ edition = "2021"
 [dependencies]
 nom = "7"
 log = "0.4"
-base64 = "0.13"
+base64-compat = "1"
 ternop = "1.0"
 either = "1.5"
