@@ -29,7 +29,7 @@ pub(crate) fn header(line: &[u8]) -> io::Result<Header> {
         Ok((_, header)) => Ok(header),
         Err(err) => Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("{:?}", err),
+            format!("{err:?}"),
         )),
     }
 }
@@ -282,3 +282,4 @@ mod tests {
         )
     }
 }
+

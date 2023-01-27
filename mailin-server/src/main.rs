@@ -136,11 +136,11 @@ fn log_filename() -> String {
     let datetime = datetime
         .format(&date_suffix_format)
         .unwrap_or_else(|_| datetime.to_string());
-    format!("smtp-{}.log", datetime)
+    format!("smtp-{datetime}.log")
 }
 
 fn print_usage(program: &str, opts: &Options) {
-    let brief = format!("Usage: {} [options]", program);
+    let brief = format!("Usage: {program} [options]");
     print!("{}", opts.usage(&brief));
 }
 
@@ -226,3 +226,4 @@ fn main() -> Result<()> {
         .serve()
         .map_err(|e| anyhow!("Cannot start server: {}", e))
 }
+

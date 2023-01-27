@@ -19,7 +19,7 @@ pub struct SslImpl {
 
 impl From<ErrorStack> for Error {
     fn from(error: ErrorStack) -> Self {
-        let msg = format!("{}", error);
+        let msg = error.to_string();
         Error::with_source(msg, error)
     }
 }
@@ -88,3 +88,4 @@ where
     file.read_to_end(&mut ret)?;
     Ok(ret)
 }
+

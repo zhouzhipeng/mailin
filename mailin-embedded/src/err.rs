@@ -47,7 +47,7 @@ impl fmt::Display for Error {
 
 impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
-        let msg = format!("{}", error);
+        let msg = error.to_string();
         Self {
             original: Some(Box::new(error)),
             msg,
@@ -60,3 +60,4 @@ impl error::Error for Error {
         self.original.as_ref().map(|o| o.as_ref())
     }
 }
+

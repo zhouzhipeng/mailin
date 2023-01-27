@@ -73,14 +73,15 @@ impl<'a> fmt::Debug for Event<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Event::Start => write!(f, "Start"),
-            Event::Header(header) => write!(f, "Header({:?})", header),
-            Event::MultipartStart(multipart) => write!(f, "MultipartStart({:?})", multipart),
-            Event::PartStart { offset } => write!(f, "PartStart({:?})", offset),
-            Event::BodyStart { offset } => write!(f, "BodyStart({:?})", offset),
+            Event::Header(header) => write!(f, "Header({header:?})"),
+            Event::MultipartStart(multipart) => write!(f, "MultipartStart({multipart:?})"),
+            Event::PartStart { offset } => write!(f, "PartStart({offset:?})"),
+            Event::BodyStart { offset } => write!(f, "BodyStart({offset:?})"),
             Event::Body(block) => write!(f, "Body({})", display_bytes(block)),
-            Event::PartEnd { offset } => write!(f, "PartEnd({:?})", offset),
+            Event::PartEnd { offset } => write!(f, "PartEnd({offset:?})"),
             Event::MultipartEnd => write!(f, "MultipartEnd"),
             Event::End => write!(f, "End"),
         }
     }
 }
+

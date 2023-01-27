@@ -18,7 +18,7 @@ impl Stream for StreamOwned<ServerConnection, TcpStream> {}
 
 impl From<TLSError> for Error {
     fn from(error: TLSError) -> Self {
-        let msg = format!("{}", error);
+        let msg = error.to_string();
         Error::with_source(msg, error)
     }
 }
@@ -97,3 +97,4 @@ fn load_key(filename: &str) -> Result<PrivateKey, Error> {
         .map(PrivateKey)
         .ok_or_else(|| Error::new("No RSA or PKCS8 keys found"))
 }
+

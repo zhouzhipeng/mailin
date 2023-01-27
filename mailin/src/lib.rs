@@ -257,9 +257,9 @@ mod tests {
             data_end_called: false,
         };
         let mut session = smtp::SessionBuilder::new("server.domain").build(ip, &mut handler);
-        let helo = format!("helo {}\r\n", domain).into_bytes();
+        let helo = format!("helo {domain}\r\n").into_bytes();
         session.process(&helo);
-        let mail = format!("mail from:<{}> body=8bitmime\r\n", from).into_bytes();
+        let mail = format!("mail from:<{from}> body=8bitmime\r\n").into_bytes();
         session.process(&mail);
         let rcpt0 = format!("rcpt to:<{}>\r\n", &to[0]).into_bytes();
         let rcpt1 = format!("rcpt to:<{}>\r\n", &to[1]).into_bytes();
@@ -276,3 +276,4 @@ mod tests {
         assert!(handler.data_called);
     }
 }
+
