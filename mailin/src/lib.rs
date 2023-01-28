@@ -35,7 +35,6 @@
 //! }
 //! ```
 
-// Use write! for /r/n
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
