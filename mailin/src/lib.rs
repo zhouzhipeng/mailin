@@ -36,7 +36,6 @@
 //! ```
 
 // Use write! for /r/n
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::write_with_newline))]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
@@ -276,4 +275,3 @@ mod tests {
         assert!(handler.data_called);
     }
 }
-
