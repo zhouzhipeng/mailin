@@ -101,7 +101,7 @@ where
             Action::Close => {
                 write_response(stream, &res)?;
                 if res.is_error {
-                    "SMTP error".to_string();
+                    return Error::bail("SMTP error");
                 } else {
                     return Ok(SessionResult::Finished);
                 }
@@ -169,6 +169,7 @@ fn handle_connection<H: Handler>(
     stream.set_write_timeout(Some(*FIVE_MINUTES)).ok();
     let bufstream = BufStream::new(stream);
     if let Err(err) = start_session(session_builder, remote, bufstream, ssl, handler) {
-        error!("({}) {}", remote, err);
+        error!("({}) Cannot start session: {}", remote, err);
     }
 }
+
