@@ -6,7 +6,6 @@ use crate::rtls::SslImpl;
 use crate::ssl::Stream;
 use crate::Server;
 use bufstream::BufStream;
-use lazy_static::lazy_static;
 use log::{debug, error, info};
 use mailin::{Action, Handler, Response, Session, SessionBuilder};
 use scoped_threadpool::Pool;
@@ -14,9 +13,7 @@ use std::io::{BufRead, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::time::Duration;
 
-lazy_static! {
-    static ref FIVE_MINUTES: Duration = Duration::new(5 * 60, 0);
-}
+const FIVE_MINUTES: Duration = Duration::new(5 * 60, 0);
 
 enum SessionResult {
     Finished,
@@ -165,8 +162,8 @@ fn handle_connection<H: Handler>(
         .map(|saddr| saddr.ip())
         .unwrap_or_else(|_| "0.0.0.0".parse().unwrap());
     debug!("New connection from {}", remote);
-    stream.set_read_timeout(Some(*FIVE_MINUTES)).ok();
-    stream.set_write_timeout(Some(*FIVE_MINUTES)).ok();
+    stream.set_read_timeout(Some(FIVE_MINUTES)).ok();
+    stream.set_write_timeout(Some(FIVE_MINUTES)).ok();
     let bufstream = BufStream::new(stream);
     if let Err(err) = start_session(session_builder, remote, bufstream, ssl, handler) {
         error!("({}) Cannot start session: {}", remote, err);
