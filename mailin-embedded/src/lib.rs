@@ -27,18 +27,20 @@
 /// Custom error type for mailin_embedded
 pub mod err;
 
-#[cfg(feature = "ossl")]
-mod ossl;
-#[cfg(feature = "rtls")]
-mod rtls;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "ossl")] {
+        mod ossl;
+        use crate::ossl::SslImpl;
+    } else {
+        mod rtls;
+        use crate::rtls::SslImpl;
+    }
+}
+
 mod running;
 mod ssl;
 
 use crate::err::Error;
-#[cfg(feature = "ossl")]
-use crate::ossl::SslImpl;
-#[cfg(feature = "rtls")]
-use crate::rtls::SslImpl;
 pub use crate::ssl::SslConfig;
 pub use mailin::response;
 pub use mailin::{Action, AuthMechanism, Handler, Response};

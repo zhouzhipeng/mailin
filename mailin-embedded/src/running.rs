@@ -1,8 +1,11 @@
 use crate::err::Error;
-#[cfg(feature = "ossl")]
-use crate::ossl::SslImpl;
-#[cfg(feature = "rtls")]
-use crate::rtls::SslImpl;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "ossl")] {
+        use crate::ossl::SslImpl;
+    } else {
+        use crate::rtls::SslImpl;
+    }
+}
 use crate::ssl::Stream;
 use crate::Server;
 use bufstream::BufStream;
@@ -169,4 +172,3 @@ fn handle_connection<H: Handler>(
         error!("({}) Cannot start session: {}", remote, err);
     }
 }
-

@@ -15,11 +15,13 @@ edition = "2021"
 features = ["rtls"]
 
 [features]
+default = ["rtls"]
 ossl = ["openssl"]
 rtls = ["rustls", "rustls-pemfile"]
 
 [dependencies]
 mailin = { path = "../mailin", version = "0.6.1" }
+cfg-if = "1"
 scoped_threadpool = "0.1"
 log = "0.4"
 bufstream = "0.1"

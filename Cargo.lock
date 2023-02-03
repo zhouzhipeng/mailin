@@ -572,6 +572,7 @@ name = "mailin-embedded"
 version = "0.7.1"
 dependencies = [
  "bufstream",
+ "cfg-if 1.0.0",
  "log",
  "mailin",
  "openssl",
