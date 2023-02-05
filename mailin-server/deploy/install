@@ -5,7 +5,9 @@ set -e
 /usr/bin/getent passwd mailin || \
     /usr/sbin/useradd -r -d /home/mailin -s /sbin/nologin mailin
 /usr/bin/mkdir -p /home/mailin/logs
+/usr/bin/mkdir -p /home/mailin/maildir
 /usr/bin/chown mailin:mailin /home/mailin/logs
+/usr/bin/chown mailin:mailin /home/mailin/maildir
 
 # Certs
 if [ ! -f /etc/mailin/fullchain.pem ] || [ ! -f /etc/mailin/privkey.pem ] ; then
