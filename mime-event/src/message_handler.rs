@@ -14,8 +14,9 @@ pub struct MessageHandler {
     message: Message,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 enum Target {
+    #[default]
     Top,
     TopAlternative,
     Alternative,
@@ -23,12 +24,6 @@ enum Target {
     Attachments,
     Inlines,
     Other,
-}
-
-impl Default for Target {
-    fn default() -> Self {
-        Target::Top
-    }
 }
 
 impl Handler for MessageHandler {
