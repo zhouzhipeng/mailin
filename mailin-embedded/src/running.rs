@@ -69,15 +69,21 @@ where
     let mut pool = Pool::new(server_state.num_threads);
     let localaddr = server_state.listener.local_addr()?;
     info!("{} SMTP started on {}", name, localaddr);
-    for conn in server_state.listener.incoming() {
-        let stream = conn?;
-        let builder = server_state.session_builder.clone();
-        let acceptor = server_state.ssl.clone();
-        let handler_clone = server_state.handler.clone();
-        pool.scoped(|scope| {
-            scope.execute(move || handle_connection(stream, &builder, acceptor, handler_clone));
-        });
-    }
+    pool.scoped(|scoped| {
+        for conn in server_state.listener.incoming() {
+            match conn {
+                Ok(stream) => {
+                    let builder = server_state.session_builder.clone();
+                    let acceptor = server_state.ssl.clone();
+                    let handler_clone = server_state.handler.clone();
+                    scoped.execute(move || {
+                        handle_connection(stream, &builder, acceptor, handler_clone)
+                    });
+                }
+                Err(e) => error!("Connection failed: {}", e),
+            }
+        }
+    });
     Ok(())
 }
 
