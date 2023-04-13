@@ -20,7 +20,7 @@ ossl = ["openssl"]
 rtls = ["rustls", "rustls-pemfile"]
 
 [dependencies]
-mailin = { path = "../mailin", version = "0.6.1" }
+mailin = { path = "../mailin", version = "0.6.2" }
 cfg-if = "1"
 scoped_threadpool = "0.1"
 log = "0.4"
