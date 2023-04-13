@@ -6,4 +6,4 @@
 Release mailin.
 EOUSE
 
-cargo release --execute --tag-prefix mailin- --no-dev-version $1
+cargo release --execute --tag-prefix mailin- $1

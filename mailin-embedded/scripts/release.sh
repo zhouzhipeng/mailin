@@ -6,4 +6,4 @@
 Release mailin-embedded.
 EOUSE
 
-cargo release --execute --features 'rtls' --tag-prefix mailin-embedded- --no-dev-version $1
+cargo release --execute --features 'rtls' --tag-prefix mailin-embedded- $1
