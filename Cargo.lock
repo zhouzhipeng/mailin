@@ -193,10 +193,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "bufstream"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40e38929add23cdf8a366df9b0e088953150724bcbe5fc330b0d8eb3b328eec8"
+name = "bufstream-fresh"
+version = "0.3.0"
 
 [[package]]
 name = "bumpalo"
@@ -571,7 +569,7 @@ dependencies = [
 name = "mailin-embedded"
 version = "0.8.0"
 dependencies = [
- "bufstream",
+ "bufstream-fresh",
  "cfg-if 1.0.0",
  "log",
  "mailin",

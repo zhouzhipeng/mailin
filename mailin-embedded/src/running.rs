@@ -8,7 +8,7 @@ cfg_if::cfg_if! {
 }
 use crate::ssl::Stream;
 use crate::Server;
-use bufstream::BufStream;
+use bufstream_fresh::BufStream;
 use log::{debug, error, info};
 use mailin::{Action, Handler, Response, Session, SessionBuilder};
 use scoped_threadpool::Pool;
