@@ -24,7 +24,7 @@ mailin = { path = "../mailin", version = "0.6.2" }
 cfg-if = "1"
 scoped_threadpool = "0.1"
 log = "0.4"
-bufstream-fresh = { path = "../../bufstream-fresh",  version = "0.3" }
-rustls = { version = "0.20", optional = true }
+bufstream-fresh = "0.3"
+rustls = { version = "0.21", optional = true }
 rustls-pemfile = { version = "1", optional = true }
 openssl = { version = "0.10", optional = true }
