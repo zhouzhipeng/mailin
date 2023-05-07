@@ -23,6 +23,9 @@ run-build:
     - rustc --version && cargo --version
     - cargo test
     - cargo clippy -- --deny warnings
+  only:
+    - master
+    - merge_requests
 
 release-build:
   stage: release
