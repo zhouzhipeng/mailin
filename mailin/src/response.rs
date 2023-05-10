@@ -175,8 +175,7 @@ impl Response {
         match self.message {
             Message::Empty => (),
             _ => {
-                let mut buf = Vec::new();
-                let _ = self.write_to(&mut buf);
+                let buf = self.buffer().unwrap_or_default();
                 trace!("< {}", String::from_utf8_lossy(&buf));
             }
         }
