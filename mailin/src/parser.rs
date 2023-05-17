@@ -132,8 +132,13 @@ fn auth_plain(buf: &[u8]) -> IResult<&[u8], Cmd> {
     map(parser, sasl_plain_cmd)(buf)
 }
 
+fn auth_login(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    let parser = preceded(tag_no_case(b"login"), alt((auth_initial, empty)));
+    map(parser, sasl_login_cmd)(buf)
+}
+
 fn auth(buf: &[u8]) -> IResult<&[u8], Cmd> {
-    preceded(cmd(b"auth"), auth_plain)(buf)
+    preceded(cmd(b"auth"), alt((auth_plain, auth_login)))(buf)
 }
 
 //---- Helper functions ---------------------------------------------------------
@@ -161,6 +166,16 @@ fn sasl_plain_cmd(param: &[u8]) -> Cmd {
     }
 }
 
+fn sasl_login_cmd(param: &[u8]) -> Cmd {
+    if param.is_empty() {
+        Cmd::AuthLoginEmpty
+    } else {
+        Cmd::AuthLogin {
+            username: decode_sasl_login(param),
+        }
+    }
+}
+
 // Decodes the base64 encoded plain authentication parameter
 pub(crate) fn decode_sasl_plain(param: &[u8]) -> Credentials {
     let decoded = base64::decode(param);
@@ -183,6 +198,13 @@ pub(crate) fn decode_sasl_plain(param: &[u8]) -> Credentials {
     }
 }
 
+// Decodes base64 encoded login authentication parameters (in login auth, username and password are
+// sent in separate lines)
+pub(crate) fn decode_sasl_login(param: &[u8]) -> String {
+    let decoded = base64::decode(param).unwrap_or_default();
+    String::from_utf8(decoded).unwrap_or_default()
+}
+
 fn next_string(it: &mut dyn Iterator<Item = &[u8]>) -> String {
     it.next()
         .map(|s| str::from_utf8(s).unwrap_or_default())
@@ -197,7 +219,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn auth_initial() {
+    fn auth_initial_plain() {
         let res = parse(b"auth plain dGVzdAB0ZXN0ADEyMzQ=\r\n");
         match res {
             Ok(Cmd::AuthPlain {
@@ -214,11 +236,31 @@ mod tests {
     }
 
     #[test]
-    fn auth_empty() {
+    fn auth_initial_login() {
+        let res = parse(b"auth login ZHVtbXk=\r\n");
+        match res {
+            Ok(Cmd::AuthLogin { username }) => {
+                assert_eq!(username, "dummy");
+            }
+            _ => panic!("Auth login with initial response incorrectly parsed"),
+        };
+    }
+
+    #[test]
+    fn auth_empty_plain() {
         let res = parse(b"auth plain\r\n");
         match res {
             Ok(Cmd::AuthPlainEmpty) => {}
             _ => panic!("Auth plain without initial response incorrectly parsed"),
+        };
+    }
+
+    #[test]
+    fn auth_empty_login() {
+        let res = parse(b"auth login\r\n");
+        match res {
+            Ok(Cmd::AuthLoginEmpty) => {}
+            _ => panic!("Auth login without initial response incorrectly parsed"),
         };
     }
 }

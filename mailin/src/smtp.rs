@@ -30,11 +30,15 @@ pub enum Cmd<'a> {
     StartTls,
     Quit,
     Vrfy,
+    AuthLogin {
+        username: String,
+    },
     AuthPlain {
         authorization_id: String,
         authentication_id: String,
         password: String,
     },
+    AuthLoginEmpty,
     AuthPlainEmpty,
     // Dummy command containing client authentication
     AuthResponse {
