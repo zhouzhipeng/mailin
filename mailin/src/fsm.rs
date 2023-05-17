@@ -1,4 +1,4 @@
-use crate::parser::{decode_sasl_plain, parse, parse_auth_response};
+use crate::parser::{decode_sasl_login, decode_sasl_plain, parse, parse_auth_response};
 use crate::response::*;
 
 use crate::smtp::Cmd;
@@ -181,7 +181,7 @@ fn handle_ehlo(
     }
 }
 
-fn authenticate(
+fn authenticate_plain(
     fsm: &mut StateMachine,
     handler: &mut dyn Handler,
     authorization_id: &str,
@@ -189,6 +189,21 @@ fn authenticate(
     password: &str,
 ) -> Response {
     let auth_res = handler.auth_plain(authorization_id, authentication_id, password);
+    fsm.auth_state = ternary!(
+        auth_res.code == 235,
+        AuthState::Authenticated,
+        AuthState::RequiresAuth
+    );
+    auth_res
+}
+
+fn authenticate_login(
+    fsm: &mut StateMachine,
+    handler: &mut dyn Handler,
+    username: &str,
+    password: &str,
+) -> Response {
+    let auth_res = handler.auth_login(username, password);
     fsm.auth_state = ternary!(
         auth_res.code == 235,
         AuthState::Authenticated,
@@ -289,7 +304,8 @@ impl State for HelloAuth {
                 ref authentication_id,
                 ref password,
             } if fsm.allow_auth_plain() => {
-                let res = authenticate(fsm, handler, authorization_id, authentication_id, password);
+                let res =
+                    authenticate_plain(fsm, handler, authorization_id, authentication_id, password);
                 transform_state(self, res, |s| Box::new(Hello { domain: s.domain }))
             }
             Cmd::AuthPlainEmpty if fsm.allow_auth_plain() => {
@@ -299,6 +315,29 @@ impl State for HelloAuth {
                     Some(Box::new(Auth {
                         domain,
                         mechanism: AuthMechanism::Plain,
+                        username: None,
+                    })),
+                )
+            }
+            Cmd::AuthLogin { ref username } if fsm.allow_auth_login() => {
+                let domain = self.domain.clone();
+                (
+                    PASSWORD_AUTH_CHALLENGE,
+                    Some(Box::new(Auth {
+                        domain,
+                        mechanism: AuthMechanism::Login,
+                        username: Some(username.clone()),
+                    })),
+                )
+            }
+            Cmd::AuthLoginEmpty if fsm.allow_auth_login() => {
+                let domain = self.domain.clone();
+                (
+                    USERNAME_AUTH_CHALLENGE,
+                    Some(Box::new(Auth {
+                        domain,
+                        mechanism: AuthMechanism::Login,
+                        username: None,
                     })),
                 )
             }
@@ -313,6 +352,7 @@ impl State for HelloAuth {
 struct Auth {
     domain: String,
     mechanism: AuthMechanism,
+    username: Option<String>,
 }
 
 impl State for Auth {
@@ -322,32 +362,54 @@ impl State for Auth {
     }
 
     fn handle(
-        self: Box<Self>,
+        mut self: Box<Self>,
         fsm: &mut StateMachine,
         handler: &mut dyn Handler,
         cmd: Cmd,
     ) -> (Response, Option<Box<dyn State>>) {
         match cmd {
-            Cmd::AuthResponse { response } => {
-                let res = match self.mechanism {
-                    AuthMechanism::Plain => {
-                        let creds = decode_sasl_plain(response);
-                        authenticate(
-                            fsm,
-                            handler,
-                            &creds.authorization_id,
-                            &creds.authentication_id,
-                            &creds.password,
+            Cmd::AuthResponse { response } => match self.mechanism {
+                AuthMechanism::Plain => {
+                    let creds = decode_sasl_plain(response);
+                    let res = authenticate_plain(
+                        fsm,
+                        handler,
+                        &creds.authorization_id,
+                        &creds.authentication_id,
+                        &creds.password,
+                    );
+                    if res.is_error {
+                        (
+                            res,
+                            Some(Box::new(HelloAuth {
+                                domain: self.domain,
+                            })),
+                        )
+                    } else {
+                        (
+                            res,
+                            Some(Box::new(Hello {
+                                domain: self.domain,
+                            })),
                         )
                     }
-                };
-                let domain = self.domain.clone();
-                if res.is_error {
-                    (res, Some(Box::new(HelloAuth { domain })))
-                } else {
-                    (res, Some(Box::new(Hello { domain })))
                 }
-            }
+                AuthMechanism::Login => {
+                    let credential = decode_sasl_login(response);
+                    if let Some(username) = self.username {
+                        let res = authenticate_login(fsm, handler, &username, &credential);
+                        let domain = self.domain.clone();
+                        if res.is_error {
+                            (res, Some(Box::new(HelloAuth { domain })))
+                        } else {
+                            (res, Some(Box::new(Hello { domain })))
+                        }
+                    } else {
+                        self.username = Some(credential);
+                        (PASSWORD_AUTH_CHALLENGE, Some(self))
+                    }
+                }
+            },
             _ => unhandled(self),
         }
     }
@@ -512,6 +574,7 @@ pub(crate) struct StateMachine {
     tls: TlsState,
     smtp: Option<Box<dyn State>>,
     auth_plain: bool,
+    auth_login: bool,
 }
 
 impl StateMachine {
@@ -523,6 +586,7 @@ impl StateMachine {
         );
         let tls = ternary!(allow_start_tls, TlsState::Inactive, TlsState::Unavailable);
         let auth_plain = auth_mechanisms.contains(&AuthMechanism::Plain);
+        let auth_login = auth_mechanisms.contains(&AuthMechanism::Login);
         Self {
             ip,
             auth_mechanisms,
@@ -530,6 +594,7 @@ impl StateMachine {
             tls,
             smtp: Some(Box::new(Idle {})),
             auth_plain,
+            auth_login,
         }
     }
 
@@ -577,5 +642,9 @@ impl StateMachine {
 
     fn allow_auth_plain(&self) -> bool {
         self.auth_plain && self.tls == TlsState::Active
+    }
+
+    fn allow_auth_login(&self) -> bool {
+        self.auth_login && self.tls == TlsState::Active
     }
 }

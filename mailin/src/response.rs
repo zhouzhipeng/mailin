@@ -16,6 +16,12 @@ pub const OK: Response = Response::fixed(250, "OK");
 pub(crate) const VERIFY_RESPONSE: Response = Response::fixed(252, "Maybe");
 // Empty response sent as an auth challenge.
 pub(crate) const EMPTY_AUTH_CHALLENGE: Response = Response::fixed(334, "");
+// Username response sent as an auth challenge for the login mechanism.
+// The message is a base64-encoded string "Username:"
+pub(crate) const USERNAME_AUTH_CHALLENGE: Response = Response::fixed(334, "VXNlcm5hbWU6");
+// Password response sent as an auth challenge for the login mechanism.
+// The message is a base64-encoded string "Password:"
+pub(crate) const PASSWORD_AUTH_CHALLENGE: Response = Response::fixed(334, "UGFzc3dvcmQ6");
 /// Response sent to the client before accepting data
 pub const START_DATA: Response = Response::fixed(354, "Start mail input; end with <CRLF>.<CRLF>");
 // State machine is not accepting commands

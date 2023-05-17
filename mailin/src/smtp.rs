@@ -383,12 +383,21 @@ mod tests {
                 INVALID_CREDENTIALS
             )
         }
+
+        fn auth_login(&mut self, username: &str, password: &str) -> Response {
+            ternary!(
+                username == "test" && password == "1234",
+                AUTH_OK,
+                INVALID_CREDENTIALS
+            )
+        }
     }
 
     fn new_auth_session(with_start_tls: bool) -> Session<AuthHandler> {
         let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let mut builder = SessionBuilder::new("some.domain");
         builder.enable_auth(AuthMechanism::Plain);
+        builder.enable_auth(AuthMechanism::Login);
         if with_start_tls {
             builder.enable_start_tls();
         }
@@ -426,6 +435,21 @@ mod tests {
     }
 
     #[test]
+    fn auth_login_param() {
+        let mut session = new_auth_session(true);
+        start_tls(&mut session);
+        let mut res = session.process(b"ehlo a.domain\r\n");
+        assert_eq!(res.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+        res = session.process(b"auth login dGVzdA==\r\n"); // "test"
+        assert_eq!(res, PASSWORD_AUTH_CHALLENGE);
+        assert_state!(session.fsm.current_state(), SmtpState::Auth);
+        res = session.process(b"MTIzNA==\r\n"); // "1234"
+        assert_eq!(res.code, 235);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
+    }
+
+    #[test]
     fn bad_auth_plain_param() {
         let mut session = new_auth_session(true);
         start_tls(&mut session);
@@ -433,6 +457,21 @@ mod tests {
         assert_eq!(res.code, 250);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
         res = session.process(b"auth plain eGVzdAB0ZXN0ADEyMzQ=\r\n");
+        assert_eq!(res.code, 535);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+    }
+
+    #[test]
+    fn bad_auth_login_param() {
+        let mut session = new_auth_session(true);
+        start_tls(&mut session);
+        let mut res = session.process(b"ehlo a.domain\r\n");
+        assert_eq!(res.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+        res = session.process(b"auth login dGVzdA==\r\n"); // "test"
+        assert_eq!(res, PASSWORD_AUTH_CHALLENGE);
+        assert_state!(session.fsm.current_state(), SmtpState::Auth);
+        res = session.process(b"YmFkLXBhc3N3b3Jk\r\n"); // "bad-password"
         assert_eq!(res.code, 535);
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }
@@ -451,6 +490,24 @@ mod tests {
         }
         assert_state!(session.fsm.current_state(), SmtpState::Auth);
         let res = session.process(b"dGVzdAB0ZXN0ADEyMzQ=\r\n");
+        assert_eq!(res.code, 235);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
+    }
+
+    #[test]
+    fn auth_login_challenge() {
+        let mut session = new_auth_session(true);
+        start_tls(&mut session);
+        let res = session.process(b"ehlo a.domain\r\n");
+        assert_eq!(res.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+        let res = session.process(b"auth login\r\n");
+        assert_eq!(res, USERNAME_AUTH_CHALLENGE);
+        assert_state!(session.fsm.current_state(), SmtpState::Auth);
+        let res = session.process(b"dGVzdA==\r\n"); // "test"
+        assert_eq!(res, PASSWORD_AUTH_CHALLENGE);
+        assert_state!(session.fsm.current_state(), SmtpState::Auth);
+        let res = session.process(b"MTIzNA==\r\n"); // "1234"
         assert_eq!(res.code, 235);
         assert_state!(session.fsm.current_state(), SmtpState::Hello);
     }
@@ -477,6 +534,38 @@ mod tests {
     }
 
     #[test]
+    fn bad_auth_login_username_challenge() {
+        let mut session = new_auth_session(true);
+        start_tls(&mut session);
+        session.process(b"ehlo a.domain\r\n");
+        let res = session.process(b"auth login\r\n");
+        assert_eq!(res, USERNAME_AUTH_CHALLENGE);
+        assert_state!(session.fsm.current_state(), SmtpState::Auth);
+        let res = session.process(b"YmFkLXVzZXJuYW1l\r\n"); // "bad-username"
+        assert_eq!(res, PASSWORD_AUTH_CHALLENGE);
+        assert_state!(session.fsm.current_state(), SmtpState::Auth);
+        let res = session.process(b"MTIzNA==\r\n"); // "1234"
+        assert_eq!(res.code, 535);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+    }
+
+    #[test]
+    fn bad_auth_login_password_challenge() {
+        let mut session = new_auth_session(true);
+        start_tls(&mut session);
+        session.process(b"ehlo a.domain\r\n");
+        let res = session.process(b"auth login\r\n");
+        assert_eq!(res, USERNAME_AUTH_CHALLENGE);
+        assert_state!(session.fsm.current_state(), SmtpState::Auth);
+        let res = session.process(b"dGVzdA==\r\n"); // "test"
+        assert_eq!(res, PASSWORD_AUTH_CHALLENGE);
+        assert_state!(session.fsm.current_state(), SmtpState::Auth);
+        let res = session.process(b"YmFkLXBhc3N3b3Jk\r\n"); // "bad-password"
+        assert_eq!(res.code, 535);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+    }
+
+    #[test]
     fn rset_with_auth() {
         let mut session = new_auth_session(true);
         start_tls(&mut session);
@@ -491,4 +580,3 @@ mod tests {
         assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
     }
 }
-

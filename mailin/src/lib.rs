@@ -129,6 +129,11 @@ pub trait Handler {
     ) -> Response {
         response::INVALID_CREDENTIALS
     }
+
+    /// Called when a login authentication request is received
+    fn auth_login(&mut self, _username: &str, _password: &str) -> Response {
+        response::INVALID_CREDENTIALS
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,6 +141,9 @@ pub trait Handler {
 pub enum AuthMechanism {
     /// Plain user/password over TLS
     Plain,
+
+    /// Sequential mechanism over TLS
+    Login,
 }
 
 impl AuthMechanism {
@@ -143,6 +151,7 @@ impl AuthMechanism {
     fn extension(&self) -> &'static str {
         match self {
             AuthMechanism::Plain => "AUTH PLAIN",
+            AuthMechanism::Login => "AUTH LOGIN",
         }
     }
 }
