@@ -613,7 +613,7 @@ dependencies = [
 
 [[package]]
 name = "mailin-embedded"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "bufstream-fresh",
  "cfg-if 1.0.0",
