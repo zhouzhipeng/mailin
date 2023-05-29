@@ -97,4 +97,3 @@ fn load_key(filename: &str) -> Result<PrivateKey, Error> {
         .map(PrivateKey)
         .ok_or_else(|| Error::new("No RSA or PKCS8 keys found"))
 }
-

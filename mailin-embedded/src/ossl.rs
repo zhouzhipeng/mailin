@@ -88,4 +88,3 @@ where
     file.read_to_end(&mut ret)?;
     Ok(ret)
 }
-

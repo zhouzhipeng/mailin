@@ -84,4 +84,3 @@ impl<'a> fmt::Debug for Event<'a> {
         }
     }
 }
-

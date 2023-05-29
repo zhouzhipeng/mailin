@@ -226,4 +226,3 @@ fn main() -> Result<()> {
         .serve()
         .map_err(|e| anyhow!("Cannot start server: {}", e))
 }
-

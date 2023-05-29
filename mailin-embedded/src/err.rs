@@ -60,4 +60,3 @@ impl error::Error for Error {
         self.original.as_ref().map(|o| o.as_ref())
     }
 }
-
