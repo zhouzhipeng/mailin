@@ -423,6 +423,20 @@ mod tests {
     }
 
     #[test]
+    fn auth_ehlo() {
+        let mut session = new_auth_session(true);
+        start_tls(&mut session);
+        let res = session.process(b"ehlo a.domain\r\n");
+        assert_eq!(res.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+        let greeting = String::from_utf8(res.buffer().unwrap()).unwrap();
+        assert_eq!(
+            greeting,
+            "250-server offers extensions:\r\n250-8BITMIME\r\n250 AUTH PLAIN LOGIN\r\n".to_string()
+        )
+    }
+
+    #[test]
     fn auth_plain_param() {
         let mut session = new_auth_session(true);
         start_tls(&mut session);

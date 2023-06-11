@@ -150,8 +150,8 @@ impl AuthMechanism {
     // Show the AuthMechanism text as an SMTP extension
     fn extension(&self) -> &'static str {
         match self {
-            AuthMechanism::Plain => "AUTH PLAIN",
-            AuthMechanism::Login => "AUTH LOGIN",
+            AuthMechanism::Plain => "PLAIN",
+            AuthMechanism::Login => "LOGIN",
         }
     }
 }
