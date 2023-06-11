@@ -75,7 +75,7 @@ pub struct Response {
 pub(crate) enum Message {
     Fixed(&'static str),
     Custom(String),
-    Dynamic(String, Vec<&'static str>),
+    Dynamic(String, Vec<String>),
     Empty,
 }
 
@@ -126,7 +126,7 @@ impl Response {
     }
 
     // A response that is built dynamically and can be a multiline response
-    pub(crate) fn dynamic(code: u16, head: String, tail: Vec<&'static str>) -> Self {
+    pub(crate) fn dynamic(code: u16, head: String, tail: Vec<String>) -> Self {
         Self {
             code,
             message: Message::Dynamic(head, tail),

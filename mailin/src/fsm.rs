@@ -629,13 +629,16 @@ impl StateMachine {
     }
 
     fn ehlo_response(&self) -> Response {
-        let mut extensions = vec!["8BITMIME"];
+        let mut extensions = vec!["8BITMIME".to_string()];
         if self.tls == TlsState::Inactive {
-            extensions.push("STARTTLS");
-        } else {
+            extensions.push("STARTTLS".to_string());
+        } else if !self.auth_mechanisms.is_empty() {
+            let mut auth_available = "AUTH".to_string();
             for auth in &self.auth_mechanisms {
-                extensions.push(auth.extension());
+                auth_available += " ";
+                auth_available += auth.extension();
             }
+            extensions.push(auth_available);
         }
         Response::dynamic(250, "server offers extensions:".to_string(), extensions)
     }
