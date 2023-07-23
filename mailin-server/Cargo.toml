@@ -13,4 +13,3 @@ simplelog = "0.12"
 time = { version = "0.3", features = ["formatting", "local-offset"] }
 getopts = "0.2"
 anyhow = "1"
-statsd = "0.15"

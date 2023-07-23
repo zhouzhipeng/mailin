@@ -30,33 +30,25 @@ const OPT_SSL_CERT: &str = "ssl-cert";
 const OPT_SSL_KEY: &str = "ssl-key";
 const OPT_SSL_CHAIN: &str = "ssl-chain";
 const OPT_BLOCKLIST: &str = "blocklist";
-const OPT_STATSD_SERVER: &str = "statsd-server";
-const OPT_STATSD_PREFIX: &str = "statsd-prefix";
 const OPT_MAILDIR: &str = "maildir";
 
 #[derive(Clone)]
 struct Handler<'a> {
     mxdns: &'a MxDns,
-    statsd: Option<&'a statsd::Client>,
     mailstore: MailStore,
 }
 
 impl<'a> mailin_embedded::Handler for Handler<'a> {
     fn helo(&mut self, ip: IpAddr, _domain: &str) -> Response {
-        self.incr_stat("helo");
         if ip == Ipv4Addr::new(127, 0, 0, 1) {
             return OK;
         }
         // Does the reverse DNS match the forward dns?
         let rdns = self.mxdns.fcrdns(ip);
         match rdns {
-            Ok(ref res) if !res.is_confirmed() => {
-                self.incr_stat("fail.fcrdns");
-                BAD_HELLO
-            }
+            Ok(ref res) if !res.is_confirmed() => BAD_HELLO,
             _ => {
                 if self.mxdns.is_blocked(ip).unwrap_or(false) {
-                    self.incr_stat("fail.blocklist");
                     BLOCKED_IP
                 } else {
                     OK
@@ -92,14 +84,6 @@ impl<'a> mailin_embedded::Handler for Handler<'a> {
                 error!("End message: {}", err);
                 INTERNAL_ERROR
             }
-        }
-    }
-}
-
-impl<'a> Handler<'a> {
-    fn incr_stat(&self, name: &str) {
-        if let Some(client) = self.statsd {
-            client.incr(name);
         }
     }
 }
@@ -160,18 +144,6 @@ fn main() -> Result<()> {
         "ssl chain of trust for the certificate",
         "PEM_FILE",
     );
-    opts.optopt(
-        "",
-        OPT_STATSD_SERVER,
-        "statsd server address",
-        "STATSD_ADDRESS",
-    );
-    opts.optopt(
-        "",
-        OPT_STATSD_PREFIX,
-        "the prefix of the statsd stats",
-        "PREFIX",
-    );
     opts.optopt("", OPT_MAILDIR, "the directory to store mail in", "MAILDIR");
     let matches = opts
         .parse(&args[1..])
@@ -192,19 +164,11 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| DOMAIN.to_owned());
     let blocklists = matches.opt_strs(OPT_BLOCKLIST);
     let mxdns = MxDns::new(blocklists)?;
-    let statsd_prefix = matches
-        .opt_str(OPT_STATSD_PREFIX)
-        .unwrap_or_else(|| "mailin".to_owned());
-    let statsd = matches
-        .opt_str(OPT_STATSD_SERVER)
-        .map(|addr| statsd::Client::new(addr, &statsd_prefix))
-        .transpose()?;
     let maildir = matches
         .opt_str(OPT_MAILDIR)
         .unwrap_or_else(|| "mail".to_owned());
     let handler = Handler {
         mxdns: &mxdns,
-        statsd: statsd.as_ref(),
         mailstore: MailStore::new(maildir),
     };
     let mut server = Server::new(handler);
