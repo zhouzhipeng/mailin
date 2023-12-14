@@ -1,7 +1,16 @@
-pipeline:
+steps:
   test:
     image: rust
     environment: [CARGO_TERM_COLOR=always]
     commands:
       - cargo check
       - cargo test
+  docker:
+    image: woodpeckerci/plugin-docker-buildx
+    settings:
+      repo: code.alienscience.org/${CI_REPO_OWNER}/mailin
+      registry: code.alienscience.org
+      tags: latest
+      username: ${CI_REPO_OWNER}
+      password:
+        from_secret: forgejo_token
