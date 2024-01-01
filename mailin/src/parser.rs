@@ -70,20 +70,51 @@ fn is8bitmime(buf: &[u8]) -> IResult<&[u8], bool> {
 }
 
 fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
-    let preamble = pair(cmd(b"mail"), tag_no_case(b"from:<"));
-    let mail_path_parser = preceded(preamble, mail_path);
-    let parser = separated_pair(mail_path_parser, tag(b">"), is8bitmime);
-    map(parser, |r| Cmd::Mail {
-        reverse_path: r.0,
-        is8bit: r.1,
-    })(buf)
+    let r1 = {
+        let preamble = pair(cmd(b"mail"), tag_no_case(b"from:<"));
+        let mail_path_parser = preceded(preamble, mail_path);
+        let parser = separated_pair(mail_path_parser, tag(b">"), is8bitmime);
+        map(parser, |r| Cmd::Mail {
+            reverse_path: r.0,
+            is8bit: r.1,
+        })(buf)
+    };
+
+    if r1.is_err(){
+        let r2 = {
+            let preamble = pair(cmd(b"mail"), tag_no_case(b"from: <"));
+            let mail_path_parser = preceded(preamble, mail_path);
+            let parser = separated_pair(mail_path_parser, tag(b">"), is8bitmime);
+            map(parser, |r| Cmd::Mail {
+                reverse_path: r.0,
+                is8bit: r.1,
+            })(buf)
+        };
+        r2
+    }
+
+    r1
 }
 
 fn rcpt(buf: &[u8]) -> IResult<&[u8], Cmd> {
+    let r1 = {
     let preamble = pair(cmd(b"rcpt"), tag_no_case(b"to:<"));
     let mail_path_parser = preceded(preamble, mail_path);
     let parser = terminated(mail_path_parser, tag(b">"));
     map(parser, |path| Cmd::Rcpt { forward_path: path })(buf)
+    };
+
+    if r1.is_err(){
+        let r2 = {
+            let preamble = pair(cmd(b"rcpt"), tag_no_case(b"to: <"));
+            let mail_path_parser = preceded(preamble, mail_path);
+            let parser = terminated(mail_path_parser, tag(b">"));
+            map(parser, |path| Cmd::Rcpt { forward_path: path })(buf)
+        };
+        r2
+    }
+
+    r1
 }
 
 fn data(buf: &[u8]) -> IResult<&[u8], Cmd> {
