@@ -90,10 +90,10 @@ fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
                 is8bit: r.1,
             })(buf)
         };
-        r2
+        return r2
     }
 
-    r1
+    return r1
 }
 
 fn rcpt(buf: &[u8]) -> IResult<&[u8], Cmd> {
@@ -111,10 +111,10 @@ fn rcpt(buf: &[u8]) -> IResult<&[u8], Cmd> {
             let parser = terminated(mail_path_parser, tag(b">"));
             map(parser, |path| Cmd::Rcpt { forward_path: path })(buf)
         };
-        r2
+        return r2
     }
 
-    r1
+    return r1
 }
 
 fn data(buf: &[u8]) -> IResult<&[u8], Cmd> {
