@@ -296,4 +296,18 @@ mod tests {
             _ => panic!("Auth login without initial response incorrectly parsed"),
         };
     }
+    #[test]
+    fn test_mail_from() {
+        let res = parse(b"MAIL FROM:<823143047@qq.com>\r\n");
+        println!("is error: {}",res.is_err());
+        match res{
+            Ok(c) => {
+                println!("ok >> {:?}", c);
+            }
+            Err(s) => {
+                println!("s : {:?}", s);
+            }
+        }
+
+    }
 }

@@ -9,7 +9,7 @@ use either::{Left, Right};
 //------ Types -----------------------------------------------------------------
 
 // Smtp commands sent by the client
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Cmd<'a> {
     Ehlo {
         domain: &'a str,
