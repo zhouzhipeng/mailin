@@ -83,7 +83,7 @@ fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
 
     if r1.is_err(){
         let r2 = {
-            info!("fuck qq");
+            // info!("fuck qq");
             let preamble = pair(cmd(b"mail"), tag_no_case(b"from: <"));
             let mail_path_parser = preceded(preamble, mail_path);
             let parser = separated_pair(mail_path_parser, tag(b">"), is8bitmime);
